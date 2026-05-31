@@ -1,0 +1,76 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: biohuerto_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?Set POSTGRES_SUPERUSER_PASSWORD in .env}
+      MIGRATION_DB_PASSWORD: ${MIGRATION_DB_PASSWORD:?Set MIGRATION_DB_PASSWORD in .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/00_roles.sh:/docker-entrypoint-initdb.d/00_roles.sh:ro
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ./backend/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - biohuertos_network
+
+  backend:
+    build:
+      context: ./backend
+    container_name: biohuerto_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://app_user:${APP_DB_PASSWORD}@db:5432/${POSTGRES_DB}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - biohuertos_network
+
+  db_backup:
+    image: postgres:16-alpine
+    container_name: biohuerto_db_backup
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?Set POSTGRES_SUPERUSER_PASSWORD in .env}
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "mkdir -p /backups &&
+      while true; do
+        pg_dump -h db -U postgres -d $$POSTGRES_DB > /backups/biohuerto_$$(date +%Y%m%d_%H%M%S).sql;
+        find /backups -name '*.sql' -mtime +7 -delete;
+        sleep 86400;
+      done"
+    networks:
+      - biohuertos_network
+
+volumes:
+  postgres_data:
+
+networks:
+  biohuertos_network:
+    driver: bridge
+
