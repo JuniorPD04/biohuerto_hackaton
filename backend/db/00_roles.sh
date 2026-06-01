@@ -14,11 +14,11 @@ psql \
   --username "$POSTGRES_USER" \
   --dbname "$POSTGRES_DB" <<-'EOSQL'
 CREATE ROLE migration_user LOGIN PASSWORD :'migration_password';
-CREATE ROLE app_user LOGIN PASSWORD :'app_password';
+CREATE ROLE app_bio_user LOGIN PASSWORD :'app_password';
 
 ALTER DATABASE :"database_name" OWNER TO migration_user;
 ALTER SCHEMA public OWNER TO migration_user;
-GRANT CONNECT, TEMPORARY ON DATABASE :"database_name" TO app_user;
-GRANT USAGE ON SCHEMA public TO app_user;
+GRANT CONNECT, TEMPORARY ON DATABASE :"database_name" TO app_bio_user;
+GRANT USAGE ON SCHEMA public TO app_bio_user;
 GRANT CREATE ON SCHEMA public TO migration_user;
 EOSQL

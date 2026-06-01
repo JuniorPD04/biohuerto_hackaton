@@ -1,6 +1,33 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'migration_user') THEN
+    CREATE ROLE migration_user LOGIN PASSWORD 'change-me-migration-password';
+  ELSE
+    ALTER ROLE migration_user WITH LOGIN PASSWORD 'change-me-migration-password';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_bio_user') THEN
+    CREATE ROLE app_bio_user LOGIN PASSWORD 'change-me-app-password';
+  ELSE
+    ALTER ROLE app_bio_user WITH LOGIN PASSWORD 'change-me-app-password';
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  EXECUTE format('GRANT CONNECT, TEMPORARY ON DATABASE %I TO app_bio_user', current_database());
+  EXECUTE format('GRANT CONNECT, TEMPORARY ON DATABASE %I TO migration_user', current_database());
+END
+$$;
+
+GRANT USAGE ON SCHEMA public TO migration_user;
+GRANT CREATE ON SCHEMA public TO migration_user;
+GRANT USAGE ON SCHEMA public TO app_bio_user;
+
 SET ROLE migration_user;
 
 CREATE TYPE rol_usuario AS ENUM ('productor', 'consumidor', 'admin');
@@ -327,10 +354,9 @@ CREATE TRIGGER trg_costeo_updated_at BEFORE UPDATE ON costeo_registros FOR EACH 
 CREATE TRIGGER trg_carbon_updated_at BEFORE UPDATE ON carbon_footprint_log FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_sync_queue_updated_at BEFORE UPDATE ON sync_queue FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO app_user;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO app_user;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_user;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO app_bio_user;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_bio_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO app_bio_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO app_bio_user;
 
 RESET ROLE;
-

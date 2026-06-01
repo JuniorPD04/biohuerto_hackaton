@@ -2,9 +2,9 @@ SET ROLE migration_user;
 
 INSERT INTO users (id, email, password_hash, nombre, rol)
 VALUES
-  (1, 'admin@biohuerto.local', crypt('Demo123!', gen_salt('bf', 12)), 'Admin Demo', 'admin'),
-  (2, 'productor.demo@biohuerto.local', crypt('Demo123!', gen_salt('bf', 12)), 'Rosa Campos', 'productor'),
-  (3, 'consumidor.demo@biohuerto.local', crypt('Demo123!', gen_salt('bf', 12)), 'Luis Torres', 'consumidor')
+  (1, 'admin@biohuerto.pe', crypt('Demo123!', gen_salt('bf', 12)), 'Admin Demo', 'admin'),
+  (2, 'productor.demo@biohuerto.pe', crypt('Demo123!', gen_salt('bf', 12)), 'Rosa Campos', 'productor'),
+  (3, 'consumidor.demo@biohuerto.pe', crypt('Demo123!', gen_salt('bf', 12)), 'Luis Torres', 'consumidor')
 ON CONFLICT (email) DO NOTHING;
 
 SELECT setval('users_id_seq', greatest((SELECT max(id) FROM users), 1), true);
@@ -32,14 +32,17 @@ INSERT INTO monitoreo_registros (
 )
 VALUES
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 1, '11111111-1111-4111-8111-111111111111', 2, 62.50, 24.30, 18400, NULL, 'Humedad adecuada despues de riego temprano.', '2026-05-29 07:20:00-05'),
-  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2', 1, '33333333-3333-4333-8333-333333333333', 2, 45.00, 27.80, 22100, 'Hojas con manchas pequenas', 'Revisar posible hongo por humedad nocturna.', '2026-05-30 08:10:00-05')
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2', 1, '33333333-3333-4333-8333-333333333333', 2, 45.00, 27.80, 22100, 'Hojas con manchas pequenas', 'Revisar posible hongo por humedad nocturna.', '2026-05-30 08:10:00-05'),
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3', 1, '22222222-2222-4222-8222-222222222222', 2, 68.00, 23.90, 17650, NULL, 'Culantro con brotes uniformes y sin plagas visibles.', '2026-05-31 07:45:00-05'),
+  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4', 1, '11111111-1111-4111-8111-111111111111', 2, 57.20, 25.10, 19800, 'Bordes secos en algunas hojas', 'Ajustar riego y revisar exposicion al sol de mediodia.', '2026-05-31 16:10:00-05')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO incidencias (
   id, biohuerto_id, cultivo_id, user_id, tipo, descripcion, severidad, estado, reportado_en
 )
 VALUES
-  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 1, '33333333-3333-4333-8333-333333333333', 2, 'fitosanitaria', 'Manchas amarillas en hojas bajas de tomate cherry.', 'media', 'abierta', '2026-05-30 08:15:00-05')
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 1, '33333333-3333-4333-8333-333333333333', 2, 'fitosanitaria', 'Manchas amarillas en hojas bajas de tomate cherry.', 'media', 'abierta', '2026-05-30 08:15:00-05'),
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2', 1, '11111111-1111-4111-8111-111111111111', 2, 'manejo', 'Bordes secos en hojas externas de lechuga por posible estres hidrico.', 'baja', 'en_revision', '2026-05-31 16:15:00-05')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO alertas (
@@ -48,7 +51,8 @@ INSERT INTO alertas (
 VALUES
   (1, 1, '11111111-1111-4111-8111-111111111111', 2, 'Riego controlado de lechuga', 'Aplicar riego ligero al amanecer y revisar humedad.', 'riego', 2, 'pendiente', '2026-06-01 06:30:00-05'),
   (2, 1, '33333333-3333-4333-8333-333333333333', 2, 'Control preventivo de tomate', 'Aplicar biopreparado suave y retirar hojas afectadas.', 'control_preventivo', 1, 'pendiente', '2026-06-01 08:00:00-05'),
-  (3, 1, '22222222-2222-4222-8222-222222222222', 2, 'Planificar cosecha de culantro', 'Revisar crecimiento para cosecha parcial.', 'cosecha', 3, 'pendiente', '2026-06-15 07:00:00-05')
+  (3, 1, '22222222-2222-4222-8222-222222222222', 2, 'Planificar cosecha de culantro', 'Revisar crecimiento para cosecha parcial.', 'cosecha', 3, 'pendiente', '2026-06-15 07:00:00-05'),
+  (4, 1, '11111111-1111-4111-8111-111111111111', 2, 'Aplicar compost liquido', 'Aplicar dosis baja de biol al suelo, sin mojar hojas.', 'fertilizacion_organica', 2, 'pendiente', '2026-06-03 07:30:00-05')
 ON CONFLICT (id) DO NOTHING;
 
 SELECT setval('alertas_id_seq', greatest((SELECT max(id) FROM alertas), 1), true);
@@ -89,8 +93,9 @@ INSERT INTO cosechas (
   precio_referencial, fecha_cosecha, foto_url, contacto_publico
 )
 VALUES
-  ('dddddddd-dddd-4ddd-8ddd-ddddddddddd1', 1, '11111111-1111-4111-8111-111111111111', 2, 'Lechuga seda agroecologica', 18.00, 'unidades', 1.50, '2026-06-25', 'https://example.local/cosechas/lechuga.jpg', 'WhatsApp comunitario disponible en demo'),
-  ('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 1, '22222222-2222-4222-8222-222222222222', 2, 'Culantro fresco', 6.50, 'kg', 8.00, '2026-06-18', 'https://example.local/cosechas/culantro.jpg', 'WhatsApp comunitario disponible en demo')
+  ('dddddddd-dddd-4ddd-8ddd-ddddddddddd1', 1, '11111111-1111-4111-8111-111111111111', 2, 'Lechuga seda agroecologica', 18.00, 'unidades', 1.50, '2026-06-25', 'https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?auto=format&fit=crop&w=900&q=80', 'WhatsApp comunitario disponible en demo'),
+  ('dddddddd-dddd-4ddd-8ddd-ddddddddddd2', 1, '22222222-2222-4222-8222-222222222222', 2, 'Culantro fresco', 6.50, 'kg', 8.00, '2026-06-18', 'https://images.unsplash.com/photo-1601493700631-2b16ec4b4716?auto=format&fit=crop&w=900&q=80', 'WhatsApp comunitario disponible en demo'),
+  ('dddddddd-dddd-4ddd-8ddd-ddddddddddd3', 1, '33333333-3333-4333-8333-333333333333', 2, 'Tomate cherry en transicion', 4.00, 'kg', 7.50, '2026-07-05', 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=900&q=80', 'WhatsApp comunitario disponible en demo')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO trazabilidad_practicas (
@@ -100,7 +105,8 @@ INSERT INTO trazabilidad_practicas (
 VALUES
   (1, '11111111-1111-4111-8111-111111111111', 2, 'compost', 'Aplicacion de compost maduro local en cama de lechuga.', 'Compost local', 12.00, 'kg', '2026-05-12', TRUE),
   (1, '33333333-3333-4333-8333-333333333333', 2, 'control biologico', 'Uso preventivo de biol diluido y retiro manual de hojas afectadas.', 'Biol casero', 2.00, 'litros', '2026-05-30', TRUE),
-  (1, '22222222-2222-4222-8222-222222222222', 2, 'riego eficiente', 'Riego temprano con regadera de bajo caudal.', 'Agua', 18.00, 'litros', '2026-05-29', TRUE);
+  (1, '22222222-2222-4222-8222-222222222222', 2, 'riego eficiente', 'Riego temprano con regadera de bajo caudal.', 'Agua', 18.00, 'litros', '2026-05-29', TRUE),
+  (1, '11111111-1111-4111-8111-111111111111', 2, 'acolchado organico', 'Cobertura ligera con restos secos limpios para conservar humedad.', 'Hojas secas', 1.50, 'kg', '2026-05-31', TRUE);
 
 INSERT INTO costeo_registros (
   biohuerto_id, cultivo_id, user_id, categoria, descripcion, monto, moneda, fecha
@@ -108,7 +114,8 @@ INSERT INTO costeo_registros (
 VALUES
   (1, '11111111-1111-4111-8111-111111111111', 2, 'insumo', 'Compost local para cama de lechuga.', 18.00, 'PEN', '2026-05-12'),
   (1, '33333333-3333-4333-8333-333333333333', 2, 'mano_obra', 'Revision fitosanitaria y poda sanitaria.', 12.00, 'PEN', '2026-05-30'),
-  (1, '22222222-2222-4222-8222-222222222222', 2, 'agua', 'Riego semanal estimado.', 4.50, 'PEN', '2026-05-29');
+  (1, '22222222-2222-4222-8222-222222222222', 2, 'agua', 'Riego semanal estimado.', 4.50, 'PEN', '2026-05-29'),
+  (1, '11111111-1111-4111-8111-111111111111', 2, 'insumo', 'Material organico para acolchado.', 3.00, 'PEN', '2026-05-31');
 
 INSERT INTO carbon_footprint_log (
   biohuerto_id, user_id, periodo_inicio, periodo_fin, compost_kg,
@@ -128,4 +135,3 @@ VALUES
   );
 
 RESET ROLE;
-
