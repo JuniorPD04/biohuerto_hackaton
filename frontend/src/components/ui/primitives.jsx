@@ -89,12 +89,13 @@ export function Button({
 
 /* ---------------- Icon button (acciones de tabla) ---------------- */
 const TONES = { default: "text-muted-2", danger: "text-[#b23a2e]", primary: "text-primary" };
-export function IconBtn({ name, title, tone = "default", onClick }) {
+export function IconBtn({ name, title, tone = "default", onClick, disabled = false }) {
   return (
     <button
       title={title}
       onClick={onClick}
-      className={`grid h-9 w-9 place-items-center rounded-[9px] border-none bg-transparent transition-colors hover:bg-chip ${TONES[tone]}`}
+      disabled={disabled}
+      className={`grid h-9 w-9 place-items-center rounded-[9px] border-none bg-transparent transition-colors hover:bg-chip disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent ${TONES[tone]}`}
     >
       <Icon name={name} size={18} />
     </button>

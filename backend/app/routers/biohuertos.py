@@ -34,9 +34,9 @@ def _to_out(row) -> BiohuertoOut:
     return BiohuertoOut.model_validate(dict(row))
 
 
-async def _ensure_biohuerto_access(session: AsyncSession, biohuerto_id: int, current_user: CurrentUser) -> None:
+async def _ensure_biohuerto_access(session: AsyncSession, biohuerto_id: int, current_user: CurrentUser):
     result = await session.execute(
-        text("select responsable_id from biohuertos where id = :id and deleted_at is null"),
+        text("select responsable_id, is_active from biohuertos where id = :id and deleted_at is null"),
         {"id": biohuerto_id},
     )
     row = result.mappings().first()
@@ -44,6 +44,7 @@ async def _ensure_biohuerto_access(session: AsyncSession, biohuerto_id: int, cur
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Biohuerto no encontrado")
     if current_user.rol != "admin" and row["responsable_id"] != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes acceder a este biohuerto")
+    return row
 
 
 @router.get("", response_model=list[BiohuertoOut])
@@ -137,10 +138,17 @@ async def update_biohuerto(
     current_user: CurrentUser = Depends(require_role("productor", "admin")),
     session: AsyncSession = Depends(get_session),
 ) -> BiohuertoOut:
-    await _ensure_biohuerto_access(session, biohuerto_id, current_user)
+    current = await _ensure_biohuerto_access(session, biohuerto_id, current_user)
     values = payload.model_dump(exclude_unset=True)
     if not values:
         return await _get_one(session, biohuerto_id)
+    # Un biohuerto dado de baja (is_active = false) no se puede editar: solo se
+    # admite el cambio que lo reactiva (is_active = true).
+    if not current["is_active"] and values.get("is_active") is not True:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede editar un biohuerto dado de baja. Reactívalo primero.",
+        )
 
     enc_key = get_settings().pgcrypto_key
     clauses: list[str] = []

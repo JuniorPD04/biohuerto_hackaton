@@ -123,7 +123,12 @@ function BiohuertoCard({ b, actions }) {
             <Button variant="ghost" icon="eye" size="sm" full onClick={() => actions.view(b)}>
               Detalles
             </Button>
-            <IconBtn name="edit" title="Modificar" onClick={() => actions.edit(b)} />
+            <IconBtn
+              name="edit"
+              title={b.is_active ? "Modificar" : "Reactiva el biohuerto para editarlo"}
+              disabled={!b.is_active}
+              onClick={() => actions.edit(b)}
+            />
             <Toggle
               on={b.is_active}
               title={b.is_active ? "Dar de baja" : "Reactivar"}
@@ -197,7 +202,12 @@ function BiohuertoList({ rows, actions }) {
             </div>
             <div className="flex items-center justify-end gap-[6px]">
               <IconBtn name="eye" title="Ver detalle" onClick={() => actions.view(b)} />
-              <IconBtn name="edit" title="Modificar" onClick={() => actions.edit(b)} />
+              <IconBtn
+                name="edit"
+                title={dim ? "Reactiva el biohuerto para editarlo" : "Modificar"}
+                disabled={dim}
+                onClick={() => actions.edit(b)}
+              />
               <Toggle
                 on={b.is_active}
                 title={b.is_active ? "Dar de baja" : "Reactivar"}

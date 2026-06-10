@@ -184,6 +184,14 @@ async def admin_update_user(
     values = payload.model_dump(exclude_unset=True)
     if not values:
         return await _fetch_user(session, user_id)
+    # Un usuario dado de baja (is_active = false) no se puede editar: solo se
+    # admite el cambio que lo reactiva (is_active = true).
+    current = await _fetch_user(session, user_id)
+    if not current.is_active and values.get("is_active") is not True:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede editar un usuario dado de baja. Reactívalo primero.",
+        )
 
     enc_key = get_settings().pgcrypto_key
     params: dict = {"user_id": user_id, "enc_key": enc_key}

@@ -418,7 +418,8 @@ export default function Cultivos() {
                     <IconBtn name="eye" title="Ver detalle" onClick={() => openWorkspace(c)} />
                     <IconBtn
                       name="edit"
-                      title="Editar"
+                      title={dim ? "Reactiva el cultivo para editarlo" : "Editar"}
+                      disabled={dim}
                       onClick={() => setFormModal({ mode: "edit", row: c })}
                     />
                     <Toggle
@@ -488,7 +489,12 @@ function CultivoCard({ c, navigate, onOpen, onEdit, onToggle, onDelete }) {
           <Button variant="ghost" icon="eye" size="sm" full onClick={onOpen}>
             Detalles
           </Button>
-          <IconBtn name="edit" title="Editar" onClick={onEdit} />
+          <IconBtn
+            name="edit"
+            title={dim ? "Reactiva el cultivo para editarlo" : "Editar"}
+            disabled={dim}
+            onClick={onEdit}
+          />
           <Toggle
             on={c.is_active}
             title={c.is_active ? "Dar de baja" : "Reactivar"}
