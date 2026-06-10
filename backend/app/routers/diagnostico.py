@@ -20,7 +20,7 @@ from app.schemas.diagnostico import (
 from app.schemas.users import CurrentUser
 from app.services.ai_service import diagnostico_guiado
 from app.services.attachments import principal_image_subquery, set_principal_image
-from app.services.plant_disease import diagnosticar_imagen
+from app.services.plant_disease import ImagenSinPlantaError, diagnosticar_imagen
 from app.services.rag import FUENTE as RAG_FUENTE
 from app.services.rag import generar_recomendacion
 
@@ -131,7 +131,7 @@ async def _save_diagnostico(
             )
             values (
               :cultivo_id, :incidencia_id, :usuario_id, :parte_planta, :observaciones_previas,
-              coalesce(:modelo_usado, 'ResNet50'), :enfermedad_detectada, :nombre_cientifico,
+              coalesce(:modelo_usado, 'ia-vision'), :enfermedad_detectada, :nombre_cientifico,
               :confianza_pct, :nivel_riesgo
             )
             returning id
@@ -230,11 +230,19 @@ async def create_diagnostico_imagen(
         await _ensure_cultivo_access(session, payload.cultivo_id, current_user)
 
     try:
-        image_bytes = base64.b64decode(payload.image_base64, validate=False)
+        base64.b64decode(payload.image_base64, validate=False)
     except (binascii.Error, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Imagen inválida.") from exc
 
-    result, modelo_usado = await diagnosticar_imagen(image_bytes)
+    try:
+        result, modelo_usado = await diagnosticar_imagen(payload.image_base64, payload.mime_type)
+    except ImagenSinPlantaError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="El servicio de diagnóstico por imagen no está disponible. Inténtalo más tarde.",
+        ) from exc
 
     return await _save_diagnostico(
         session=session,

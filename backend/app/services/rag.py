@@ -1,8 +1,8 @@
 """RAG (Retrieval-Augmented Generation) para recomendaciones de manejo.
 
-Usa Ollama (embeddings + LLM local) y pgvector para recuperar fragmentos
-relevantes de la guia FAO/IPES "Biopreparados para el manejo sostenible de
-plagas y enfermedades en la agricultura urbana y periurbana" (2010) y generar
+Usa OpenAI (embeddings) + pgvector para recuperar fragmentos relevantes de la
+guia FAO/IPES "Biopreparados para el manejo sostenible de plagas y enfermedades
+en la agricultura urbana y periurbana" (2010), y OpenRouter (LLM) para generar
 una recomendacion de manejo organico para el problema detectado por el modelo
 de diagnostico.
 """
@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.schemas.diagnostico import DiagnosticoResult
+from app.services.llm import openai_embed, openrouter_chat_json
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
 TOP_K = 8
 MIN_PARAGRAPH_LEN = 20
+EMBED_BATCH_SIZE = 64
 
 SYSTEM_PROMPT_CUIDADO = (
     "Eres un agronomo especialista en agricultura ecologica y biohuertos urbanos del "
@@ -97,19 +99,13 @@ def _vector_literal(embedding: list[float]) -> str:
     return "[" + ",".join(repr(float(x)) for x in embedding) + "]"
 
 
-async def _embed(client: httpx.AsyncClient, text_input: str) -> list[float]:
-    settings = get_settings()
-    response = await client.post(
-        f"{settings.ollama_url}/api/embeddings",
-        json={"model": settings.ollama_embed_model, "prompt": text_input},
-        timeout=60,
-    )
-    response.raise_for_status()
-    return response.json()["embedding"]
-
-
 async def ensure_ingested(session_factory: Callable[[], AsyncSession]) -> None:
     """Carga la guia FAO en `rag_chunks` la primera vez que arranca el backend."""
+    settings = get_settings()
+    if not settings.openai_api_key:
+        logger.warning("RAG: OPENAI_API_KEY no configurada, se omite la ingesta")
+        return
+
     async with session_factory() as session:
         existing = await session.execute(text("select count(*) from rag_chunks"))
         if existing.scalar_one() > 0:
@@ -122,45 +118,47 @@ async def ensure_ingested(session_factory: Callable[[], AsyncSession]) -> None:
     chunks = _chunk_text(DOC_PATH.read_text(encoding="utf-8"))
     logger.info("RAG: ingiriendo %d fragmentos de %s", len(chunks), DOC_PATH.name)
 
-    async with httpx.AsyncClient() as client:
-        for idx, chunk in enumerate(chunks):
-            try:
-                embedding = await _embed(client, chunk)
-            except (httpx.HTTPError, KeyError) as exc:
-                logger.warning(
-                    "RAG: fallo embebiendo fragmento %d/%d (%s); se reintentara en el proximo arranque",
-                    idx,
-                    len(chunks),
-                    exc,
-                )
-                return
-            async with session_factory() as session:
-                await session.execute(
-                    text(
-                        """
-                        insert into rag_chunks (fuente, chunk_index, contenido, embedding)
-                        values (:fuente, :idx, :contenido, (:embedding)::vector)
-                        """
-                    ),
-                    {
-                        "fuente": FUENTE,
-                        "idx": idx,
-                        "contenido": chunk,
-                        "embedding": _vector_literal(embedding),
-                    },
-                )
-                await session.commit()
+    embeddings: list[list[float]] = []
+    for start in range(0, len(chunks), EMBED_BATCH_SIZE):
+        batch = chunks[start : start + EMBED_BATCH_SIZE]
+        try:
+            embeddings.extend(await openai_embed(batch))
+        except (httpx.HTTPError, RuntimeError, KeyError) as exc:
+            logger.warning(
+                "RAG: fallo embebiendo lote %d-%d (%s); se reintentara en el proximo arranque",
+                start,
+                start + len(batch),
+                exc,
+            )
+            return
+
+    async with session_factory() as session:
+        for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+            await session.execute(
+                text(
+                    """
+                    insert into rag_chunks (fuente, chunk_index, contenido, embedding)
+                    values (:fuente, :idx, :contenido, (:embedding)::vector)
+                    """
+                ),
+                {
+                    "fuente": FUENTE,
+                    "idx": idx,
+                    "contenido": chunk,
+                    "embedding": _vector_literal(embedding),
+                },
+            )
+        await session.commit()
 
     logger.info("RAG: ingesta completa (%d fragmentos)", len(chunks))
 
 
 async def _retrieve(session: AsyncSession, query: str) -> list[str]:
-    async with httpx.AsyncClient() as client:
-        try:
-            embedding = await _embed(client, query)
-        except (httpx.HTTPError, KeyError) as exc:
-            logger.warning("RAG: fallo generando embedding de consulta: %s", exc)
-            return []
+    try:
+        embedding = (await openai_embed([query]))[0]
+    except (httpx.HTTPError, RuntimeError, KeyError, IndexError) as exc:
+        logger.warning("RAG: fallo generando embedding de consulta: %s", exc)
+        return []
 
     result = await session.execute(
         text(
@@ -176,8 +174,39 @@ async def _retrieve(session: AsyncSession, query: str) -> list[str]:
     return [row[0] for row in result.all()]
 
 
+async def _generar_json(*, system: str, prompt: str, contexto_log: str) -> tuple[str, list[str]]:
+    """Llama al LLM de OpenRouter y devuelve (recomendacion, acciones) o ("", []) si falla."""
+    settings = get_settings()
+    started = time.perf_counter()
+    try:
+        data = await openrouter_chat_json(
+            model=settings.openrouter_model_text,
+            system=system,
+            user_content=prompt,
+            timeout=120,
+        )
+    except (httpx.HTTPError, RuntimeError, KeyError, IndexError, ValueError, json.JSONDecodeError) as exc:
+        logger.warning(
+            "RAG: fallo generando %s con OpenRouter tras %.1fs: %s",
+            contexto_log,
+            time.perf_counter() - started,
+            exc,
+        )
+        return "", []
+
+    logger.info(
+        "RAG: %s generada con %s en %.1fs",
+        contexto_log,
+        settings.openrouter_model_text,
+        time.perf_counter() - started,
+    )
+    recomendacion = str(data.get("recomendacion") or "").strip()
+    acciones = [str(a).strip() for a in data.get("acciones") or [] if str(a).strip()]
+    return recomendacion, acciones
+
+
 async def generar_recomendacion(session: AsyncSession, result: DiagnosticoResult) -> tuple[str, list[str]]:
-    """Devuelve (recomendacion, acciones) usando RAG + Ollama, o ("", []) si no aplica/falla."""
+    """Devuelve (recomendacion, acciones) usando RAG + OpenRouter, o ("", []) si no aplica/falla."""
     if result.es_sano:
         return "", []
 
@@ -202,39 +231,11 @@ async def generar_recomendacion(session: AsyncSession, result: DiagnosticoResult
         + "instrucciones del sistema sobre cuando usar el contexto y cuando usar tu propio conocimiento."
     )
 
-    settings = get_settings()
-    started = time.perf_counter()
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                f"{settings.ollama_url}/api/generate",
-                json={
-                    "model": settings.ollama_llm_model,
-                    "system": SYSTEM_PROMPT,
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": "json",
-                },
-                timeout=240,
-            )
-            response.raise_for_status()
-            data = json.loads(response.json()["response"])
-        except (httpx.HTTPError, KeyError, json.JSONDecodeError) as exc:
-            logger.warning(
-                "RAG: fallo generando recomendacion con Ollama tras %.1fs: %s",
-                time.perf_counter() - started,
-                exc,
-            )
-            return "", []
-    logger.info(
-        "RAG: recomendacion de diagnostico generada con %s en %.1fs",
-        settings.ollama_llm_model,
-        time.perf_counter() - started,
+    return await _generar_json(
+        system=SYSTEM_PROMPT,
+        prompt=prompt,
+        contexto_log="recomendacion de diagnostico",
     )
-
-    recomendacion = str(data.get("recomendacion") or "").strip()
-    acciones = [str(a).strip() for a in data.get("acciones") or [] if str(a).strip()]
-    return recomendacion, acciones
 
 
 async def generar_recomendacion_cultivo(
@@ -255,37 +256,8 @@ async def generar_recomendacion_cultivo(
         "siguiendo las instrucciones del sistema."
     )
 
-    settings = get_settings()
-    started = time.perf_counter()
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                f"{settings.ollama_url}/api/generate",
-                json={
-                    "model": settings.ollama_llm_model,
-                    "system": SYSTEM_PROMPT_CUIDADO,
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": "json",
-                },
-                timeout=240,
-            )
-            response.raise_for_status()
-            data = json.loads(response.json()["response"])
-        except (httpx.HTTPError, KeyError, json.JSONDecodeError) as exc:
-            logger.warning(
-                "RAG: fallo generando recomendacion de cuidado general con Ollama tras %.1fs: %s",
-                time.perf_counter() - started,
-                exc,
-            )
-            return "", []
-    logger.info(
-        "RAG: recomendacion de cuidado para '%s' generada con %s en %.1fs",
-        cultivo_label,
-        settings.ollama_llm_model,
-        time.perf_counter() - started,
+    return await _generar_json(
+        system=SYSTEM_PROMPT_CUIDADO,
+        prompt=prompt,
+        contexto_log=f"recomendacion de cuidado para '{cultivo_label}'",
     )
-
-    recomendacion = str(data.get("recomendacion") or "").strip()
-    acciones = [str(a).strip() for a in data.get("acciones") or [] if str(a).strip()]
-    return recomendacion, acciones

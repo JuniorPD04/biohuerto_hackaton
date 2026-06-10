@@ -1,16 +1,15 @@
 import json
-from typing import Any
-
-import httpx
 
 from app.config import get_settings
 from app.schemas.diagnostico import DiagnosticoResult
+from app.services.llm import openrouter_chat_json
 
 SYSTEM_PROMPT_AGRO = """Eres un agronomo especialista en agricultura ecologica y biohuertos urbanos del departamento de Lambayeque, Peru.
 Solo debes proporcionar recomendaciones de manejo sostenible usando metodos organicos, biologicos y tradicionales.
 NUNCA recomiendes agroquimicos sinteticos. Basa tus respuestas en cultivos frecuentes de la region: aji, culantro, lechuga,
 rabanito, tomate, zapallo, albahaca, cebolla china, espinaca y hierbas aromaticas locales. Responde en espanol peruano,
-en un tono claro y accesible para pequenos productores comunitarios sin formacion tecnica formal."""
+en un tono claro y accesible para pequenos productores comunitarios sin formacion tecnica formal.
+Devuelve solo JSON valido con problema, nivel_riesgo, recomendacion, acciones y confianza."""
 
 
 def _fallback_result(especie: str, sintomas: list[str], zona_afectada: str | None, tiempo_dias: int | None) -> DiagnosticoResult:
@@ -56,18 +55,6 @@ def _fallback_result(especie: str, sintomas: list[str], zona_afectada: str | Non
     )
 
 
-def _extract_json(text: str) -> dict[str, Any]:
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.strip("`")
-        cleaned = cleaned.removeprefix("json").strip()
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start >= 0 and end >= start:
-        cleaned = cleaned[start : end + 1]
-    return json.loads(cleaned)
-
-
 async def diagnostico_guiado(
     *,
     especie: str,
@@ -76,7 +63,7 @@ async def diagnostico_guiado(
     tiempo_dias: int | None,
 ) -> tuple[DiagnosticoResult, str | None]:
     settings = get_settings()
-    if not settings.openai_api_key or not settings.openai_model_text:
+    if not settings.openrouter_api_key:
         return _fallback_result(especie, sintomas, zona_afectada, tiempo_dias), None
 
     user_prompt = {
@@ -93,76 +80,10 @@ async def diagnostico_guiado(
             "confianza": "numero 0 a 100",
         },
     }
-    result = await _responses_request(
-        model=settings.openai_model_text,
-        input_payload=json.dumps(user_prompt, ensure_ascii=False),
+    data = await openrouter_chat_json(
+        model=settings.openrouter_model_text,
+        system=SYSTEM_PROMPT_AGRO,
+        user_content=json.dumps(user_prompt, ensure_ascii=False),
+        timeout=60,
     )
-    return DiagnosticoResult.model_validate(_extract_json(result)), settings.openai_model_text
-
-
-async def diagnostico_imagen(
-    *,
-    especie: str,
-    image_base64: str,
-    mime_type: str,
-    sintomas: list[str],
-    zona_afectada: str | None,
-    tiempo_dias: int | None,
-) -> tuple[DiagnosticoResult, str | None]:
-    settings = get_settings()
-    if not settings.openai_api_key or not settings.openai_model_vision:
-        return _fallback_result(especie, sintomas or ["imagen sin analisis configurado"], zona_afectada, tiempo_dias), None
-
-    data_url = f"data:{mime_type};base64,{image_base64}"
-    prompt = json.dumps(
-        {
-            "modalidad": "diagnostico_por_imagen",
-            "especie": especie,
-            "sintomas_reportados": sintomas,
-            "zona_afectada": zona_afectada,
-            "tiempo_dias": tiempo_dias,
-            "instruccion": "Analiza la imagen solo como apoyo inicial y responde JSON estricto.",
-        },
-        ensure_ascii=False,
-    )
-    result = await _responses_request(
-        model=settings.openai_model_vision,
-        input_payload=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": prompt},
-                    {"type": "input_image", "image_url": data_url, "detail": "auto"},
-                ],
-            }
-        ],
-    )
-    return DiagnosticoResult.model_validate(_extract_json(result)), settings.openai_model_vision
-
-
-async def _responses_request(*, model: str, input_payload: Any) -> str:
-    settings = get_settings()
-    payload = {
-        "model": model,
-        "instructions": SYSTEM_PROMPT_AGRO + "\nDevuelve solo JSON valido con problema, nivel_riesgo, recomendacion, acciones y confianza.",
-        "input": input_payload,
-    }
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            "https://api.openai.com/v1/responses",
-            headers={
-                "Authorization": f"Bearer {settings.openai_api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
-        response.raise_for_status()
-        data = response.json()
-    if "output_text" in data and data["output_text"]:
-        return data["output_text"]
-    for item in data.get("output", []):
-        for content in item.get("content", []):
-            if content.get("type") in {"output_text", "text"} and content.get("text"):
-                return content["text"]
-    raise ValueError("La respuesta de IA no contiene texto util.")
-
+    return DiagnosticoResult.model_validate(data), settings.openrouter_model_text

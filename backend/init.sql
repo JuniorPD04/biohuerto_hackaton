@@ -358,7 +358,7 @@ CREATE TABLE diagnosticos (
   parte_planta          VARCHAR(40)  NULL
                         CHECK (parte_planta IN ('Hoja','Fruto','Tallo','Raíz','Planta completa')),
   observaciones_previas TEXT         NULL,
-  modelo_usado          VARCHAR(120) NOT NULL DEFAULT 'ResNet50',
+  modelo_usado          VARCHAR(120) NOT NULL DEFAULT 'ia-vision',
   enfermedad_detectada  VARCHAR(200) NULL,
   nombre_cientifico     VARCHAR(200) NULL,
   confianza_pct         NUMERIC(5,2) NULL
@@ -413,17 +413,18 @@ CREATE TABLE recomendaciones (
 );
 
 -- ============================================================
---  BLOQUE 7.1 · RAG (recomendaciones por embeddings, Ollama + pgvector)
+--  BLOQUE 7.1 · RAG (recomendaciones por embeddings, OpenAI + pgvector)
 -- ============================================================
 
 -- Fragmentos del documento FAO/IPES "Biopreparados para el manejo
--- sostenible de plagas y enfermedades" embebidos con nomic-embed-text (768 dim).
+-- sostenible de plagas y enfermedades" embebidos con OpenAI
+-- text-embedding-3-small (1536 dim).
 CREATE TABLE rag_chunks (
   id          BIGSERIAL    PRIMARY KEY,
   fuente      VARCHAR(200) NOT NULL,
   chunk_index INT          NOT NULL,
   contenido   TEXT         NOT NULL,
-  embedding   VECTOR(768)  NOT NULL,
+  embedding   VECTOR(1536) NOT NULL,
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 

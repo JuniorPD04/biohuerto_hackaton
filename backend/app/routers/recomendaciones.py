@@ -146,7 +146,7 @@ async def create_recomendacion_general(
             "cultivo_id": cultivo_id,
             "titulo": f"Cuidados generales: {cultivo['especie']}",
             "cuerpo": cuerpo,
-            "fuente": "IA - recomendacion general (Ollama)",
+            "fuente": "IA - recomendacion general (OpenRouter)",
         },
     )
     new_id = result.scalar_one()
