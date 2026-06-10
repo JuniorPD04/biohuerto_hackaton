@@ -146,7 +146,7 @@ function Loading() {
 }
 
 /* ============ Sección: Monitoreo ============ */
-function MonitorCard({ titulo, valor, unidad, texto, sub, icon, empty }) {
+function MonitorCard({ titulo, valor, unidad, texto, sub, icon, empty, onUpdate }) {
   return (
     <Card
       pad="p-5"
@@ -182,6 +182,11 @@ function MonitorCard({ titulo, valor, unidad, texto, sub, icon, empty }) {
           </>
         )}
       </div>
+      {onUpdate && (
+        <Button variant="ghost" icon="refresh" size="sm" full onClick={onUpdate} className="mt-4">
+          Actualizar
+        </Button>
+      )}
     </Card>
   );
 }
@@ -207,6 +212,10 @@ function SeccionMonitoreo({ cultivoId }) {
   const [modal, setModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ humedad: "", temp: "", lux: "", ph: "", observacion: "" });
+  // Actualización rápida de una sola variable (un dato por card).
+  const [campo, setCampo] = useState(null); // clave de la variable a actualizar
+  const [valorCampo, setValorCampo] = useState("");
+  const [savingCampo, setSavingCampo] = useState(false);
 
   const load = () => {
     setRows(null);
@@ -255,7 +264,42 @@ function SeccionMonitoreo({ cultivoId }) {
       .finally(() => setSaving(false));
   };
 
-  const cols = "1.1fr .8fr 2fr 1fr";
+  const CAMPOS_ACTUALIZABLES = {
+    humedad_pct: { label: "Humedad", icon: "drop", unidad: "%", placeholder: "Ej. 60" },
+    temperatura_c: { label: "Temperatura", icon: "thermo", unidad: "°C", placeholder: "Ej. 24" },
+    luminosidad_lux: { label: "Luminosidad", icon: "sun", unidad: "lux", placeholder: "Ej. 8000" },
+    ph_suelo: { label: "pH del suelo", icon: "flask", unidad: "", placeholder: "Ej. 6.5" },
+  };
+  const abrirActualizar = (key) => {
+    setCampo(key);
+    setValorCampo("");
+  };
+  const guardarCampo = () => {
+    if (valorCampo === "") {
+      toast("Ingresa un valor", "danger");
+      return;
+    }
+    setSavingCampo(true);
+    monitoreoApi
+      .create({
+        cultivo_id: cultivoId,
+        humedad_pct: null,
+        temperatura_c: null,
+        luminosidad_lux: null,
+        ph_suelo: null,
+        [campo]: +valorCampo,
+        observacion: null,
+      })
+      .then(() => {
+        toast(`${CAMPOS_ACTUALIZABLES[campo].label} actualizado`);
+        setCampo(null);
+        load();
+      })
+      .catch(() => toast("No se pudo actualizar el dato", "danger"))
+      .finally(() => setSavingCampo(false));
+  };
+
+  const cols = "1.2fr 2fr";
 
   return (
     <div>
@@ -277,6 +321,7 @@ function SeccionMonitoreo({ cultivoId }) {
               sub="Humedad relativa"
               icon="drop"
               empty={lastHum.humedad_pct == null}
+              onUpdate={() => abrirActualizar("humedad_pct")}
             />
             <MonitorCard
               titulo="Temperatura"
@@ -285,6 +330,7 @@ function SeccionMonitoreo({ cultivoId }) {
               sub="Temperatura ambiente"
               icon="thermo"
               empty={lastTemp.temperatura_c == null}
+              onUpdate={() => abrirActualizar("temperatura_c")}
             />
             <MonitorCard
               titulo="Luminosidad"
@@ -292,14 +338,16 @@ function SeccionMonitoreo({ cultivoId }) {
               sub="Nivel de luz estimado"
               icon="sun"
               empty={!lastLux.luminosidad_nivel}
+              onUpdate={() => abrirActualizar("luminosidad_lux")}
             />
             <MonitorCard
               titulo="pH del suelo"
               valor={lastPh.ph_suelo != null ? Number(lastPh.ph_suelo) : null}
               unidad=""
-              sub="Disponible para sensor o ingreso manual"
+              sub="Ingreso manual"
               icon="flask"
               empty={lastPh.ph_suelo == null}
+              onUpdate={() => abrirActualizar("ph_suelo")}
             />
           </div>
 
@@ -315,12 +363,8 @@ function SeccionMonitoreo({ cultivoId }) {
             />
           ) : (
             <Card pad="p-0" className="overflow-hidden">
-              <Table head={["Fecha / Hora", "Fuente", "Variables registradas", "Registrado por"]} cols={cols}>
+              <Table head={["Fecha / Hora", "Variables registradas"]} cols={cols}>
                 {rows.map((r) => {
-                  const iot = r.fuente === "iot" || r.fuente === "IoT";
-                  const cfg = iot
-                    ? { bg: "#dcefd7", fg: "#2f6b34", dot: "#3f9a48", label: "IoT" }
-                    : { bg: "#e7eefb", fg: "#33559e", dot: "#5b7fd6", label: "Manual" };
                   const vars = [
                     r.humedad_pct != null ? `${Number(r.humedad_pct)}% hum` : null,
                     r.temperatura_c != null ? `${Number(r.temperatura_c)} °C` : null,
@@ -337,15 +381,7 @@ function SeccionMonitoreo({ cultivoId }) {
                         </span>
                       </Cell>
                       <Cell>
-                        <Badge bg={cfg.bg} fg={cfg.fg} dot={cfg.dot}>{cfg.label}</Badge>
-                      </Cell>
-                      <Cell>
                         <span className="text-[14px] text-muted-1">{vars || "Sin variables"}</span>
-                      </Cell>
-                      <Cell>
-                        <span className="text-[14px] font-semibold text-muted-1">
-                          {r.sensor_codigo || (iot ? "Sensor" : "Manual")}
-                        </span>
                       </Cell>
                     </Row>
                   );
@@ -396,6 +432,35 @@ function SeccionMonitoreo({ cultivoId }) {
             placeholder="Notas generales del registro…"
           />
         </Field>
+      </Modal>
+
+      <Modal
+        open={campo != null}
+        onClose={() => setCampo(null)}
+        title={campo ? `Actualizar ${CAMPOS_ACTUALIZABLES[campo].label.toLowerCase()}` : ""}
+        subtitle="Registra el nuevo valor de esta variable"
+        width={440}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setCampo(null)}>Cancelar</Button>
+            <Button icon="check" onClick={guardarCampo} disabled={savingCampo}>Guardar</Button>
+          </>
+        }
+      >
+        {campo && (
+          <Field
+            label={`${CAMPOS_ACTUALIZABLES[campo].label}${
+              CAMPOS_ACTUALIZABLES[campo].unidad ? ` (${CAMPOS_ACTUALIZABLES[campo].unidad})` : ""
+            }`}
+          >
+            <InputUnit
+              icon={CAMPOS_ACTUALIZABLES[campo].icon}
+              value={valorCampo}
+              onChange={setValorCampo}
+              placeholder={CAMPOS_ACTUALIZABLES[campo].placeholder}
+            />
+          </Field>
+        )}
       </Modal>
     </div>
   );
@@ -492,7 +557,6 @@ function SeccionDiagnostico({ cultivoId, cultivo }) {
                     <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted-2">
                       {d.nombre_cientifico && <span className="italic">{d.nombre_cientifico}</span>}
                       <span>Parte: {d.parte_planta}</span>
-                      {d.modelo && <span>Modelo: {d.modelo}</span>}
                       {d.confianza != null && (
                         <span className="font-semibold text-muted-1">{Math.round(Number(d.confianza))}% confianza</span>
                       )}
@@ -880,6 +944,61 @@ function SeccionIncidencias({ cultivoId }) {
 const fmtCronometro = (s) =>
   `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
+// Da formato al cuerpo de una recomendación: párrafo introductorio + lista de
+// acciones (líneas "- ") + bloque de fuentes ("Fuentes consultadas:").
+function RecomendacionCuerpo({ texto }) {
+  if (!texto) return null;
+  const FUENTES = "Fuentes consultadas:";
+  const [principal, fuentesRaw] = texto.split(FUENTES);
+
+  const isBullet = (l) => /^[-•]\s+/.test(l);
+  const stripBullet = (l) => l.replace(/^[-•]\s+/, "").trim();
+
+  const intro = [];
+  const acciones = [];
+  for (const l of (principal || "").split("\n").map((x) => x.trim()).filter(Boolean)) {
+    if (isBullet(l)) acciones.push(stripBullet(l));
+    else if (acciones.length === 0) intro.push(l);
+    else acciones[acciones.length - 1] += " " + l;
+  }
+  const fuentes = (fuentesRaw || "")
+    .split("\n")
+    .map((l) => stripBullet(l.trim()))
+    .filter(Boolean);
+
+  return (
+    <div className="mt-[10px] flex flex-col gap-[12px]">
+      {intro.length > 0 && (
+        <p className="m-0 text-[14px] leading-[1.6] text-muted-1 [text-wrap:pretty]">
+          {intro.join(" ")}
+        </p>
+      )}
+      {acciones.length > 0 && (
+        <ul className="m-0 flex list-none flex-col gap-[7px] p-0">
+          {acciones.map((a, i) => (
+            <li key={i} className="flex items-start gap-[9px] text-[14px] leading-[1.55] text-muted-1">
+              <span className="mt-[3px] flex-shrink-0 text-primary">
+                <Icon name="check" size={15} />
+              </span>
+              <span className="[text-wrap:pretty]">{a}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {fuentes.length > 0 && (
+        <div className="rounded-lg border border-line bg-chip px-[12px] py-[9px] text-[12px] leading-[1.5] text-muted-2">
+          <span className="font-bold text-muted-1">{FUENTES}</span>
+          <ul className="m-0 mt-[3px] flex list-none flex-col gap-[2px] p-0">
+            {fuentes.map((f, i) => (
+              <li key={i} className="[text-wrap:pretty]">{f}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SeccionRecomendaciones({ cultivoId, cultivo }) {
   const toast = useToast();
   const [rows, setRows] = useState(null);
@@ -965,9 +1084,7 @@ function SeccionRecomendaciones({ cultivoId, cultivo }) {
                           {r.categoria}
                         </span>
                       </div>
-                      <p className="m-0 mt-[10px] text-[14px] leading-[1.6] text-muted-1 [text-wrap:pretty]">
-                        {r.descripcion}
-                      </p>
+                      <RecomendacionCuerpo texto={r.descripcion} />
                       <div className="mt-4 flex flex-wrap items-center justify-between gap-[14px]">
                         <span className="inline-flex items-center gap-[7px] text-[12.5px] font-semibold text-muted-2">
                           <Icon name="clipboard" size={14} />

@@ -24,6 +24,7 @@ import { cultivosApi, biohuertosApi } from "../lib/resources.js";
 
 const QUICK_SECTIONS = [
   { id: "monitoreo", label: "Monitoreo", icon: "activity" },
+  { id: "diagnostico", label: "Diagnóstico fitosanitario", icon: "stethoscope" },
   { id: "incidencias", label: "Gestión de incidencias", icon: "alertTri" },
   { id: "recomendaciones", label: "Recomendaciones", icon: "bulb" },
   { id: "practicas", label: "Prácticas agrícolas", icon: "recycle" },
@@ -130,6 +131,7 @@ export default function Cultivos() {
   const [view, setView] = useState(() => localStorage.getItem("bh-cropview") || "list");
 
   const [formModal, setFormModal] = useState(null); // { mode: "new"|"edit", row }
+  const [detailModal, setDetailModal] = useState(null); // cultivo a mostrar (solo lectura)
 
   useEffect(() => {
     localStorage.setItem("bh-cropview", view);
@@ -173,8 +175,6 @@ export default function Cultivos() {
       // Activos primero, conservando el orden original dentro de cada grupo.
       .sort((a, b) => Number(b.is_active ?? true) - Number(a.is_active ?? true));
   }, [rows, q, bio, etapa]);
-
-  const openWorkspace = (c) => navigate(`/cultivos/${c.id}`);
 
   const handleSubmit = async (form, mode, id) => {
     const payload = {
@@ -331,7 +331,7 @@ export default function Cultivos() {
               key={c.id}
               c={c}
               navigate={navigate}
-              onOpen={() => openWorkspace(c)}
+              onOpen={() => setDetailModal(c)}
               onEdit={() => setFormModal({ mode: "edit", row: c })}
               onToggle={() => toggleActive(c)}
               onDelete={() => handleDelete(c)}
@@ -415,7 +415,7 @@ export default function Cultivos() {
 
                   {/* Acciones */}
                   <div className="ml-auto flex items-center gap-[2px]">
-                    <IconBtn name="eye" title="Ver detalle" onClick={() => openWorkspace(c)} />
+                    <IconBtn name="eye" title="Ver detalle" onClick={() => setDetailModal(c)} />
                     <IconBtn
                       name="edit"
                       title={dim ? "Reactiva el cultivo para editarlo" : "Editar"}
@@ -450,6 +450,8 @@ export default function Cultivos() {
         onClose={() => setFormModal(null)}
         onSave={handleSubmit}
       />
+
+      <CultivoDetalleModal cultivo={detailModal} onClose={() => setDetailModal(null)} />
     </div>
   );
 }
@@ -621,6 +623,62 @@ function CultivoFormModal({ open, mode, cultivo, biohuertos, onClose, onSave }) 
           <Field label="Área sembrada (m²)">
             <Input type="number" value={form.area_m2} onChange={set("area_m2")} placeholder="0" />
           </Field>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------------- Modal Detalles (solo lectura) ---------------- */
+function ReadField({ label, value, full }) {
+  return (
+    <Field label={label} className={full ? "col-span-2" : ""}>
+      <div className="min-h-[46px] rounded-xl border border-line bg-chip px-[14px] py-3 text-[15px] text-text [overflow-wrap:anywhere]">
+        {value ?? "—"}
+      </div>
+    </Field>
+  );
+}
+
+function CultivoDetalleModal({ cultivo, onClose }) {
+  const c = cultivo;
+  if (!c) return null;
+  const fmt = (v) => (v ? fmtFecha(v) : "—");
+  const txt = (v) => (v != null && v !== "" ? v : "—");
+  const etapa = ETAPAS[c.etapa]?.label || c.etapa_nombre || c.etapa || "—";
+  const cantidad = c.cantidad != null ? `${c.cantidad} ${c.unidad_cantidad || "und"}`.trim() : "—";
+  const area = c.area_m2 != null ? `${c.area_m2} m²` : "—";
+
+  return (
+    <Modal
+      open={!!c}
+      onClose={onClose}
+      title="Detalles del cultivo"
+      subtitle="Información registrada (solo lectura)"
+    >
+      <div className="grid gap-[18px]">
+        {c.imagen && (
+          <img
+            src={c.imagen}
+            alt={c.especie || "cultivo"}
+            className="h-[160px] w-full rounded-xl border border-line object-cover"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+          />
+        )}
+        <div className="grid grid-cols-2 gap-[18px]">
+          <ReadField label="Especie" value={txt(c.especie)} />
+          <ReadField label="Variedad" value={txt(c.variedad)} />
+          <ReadField label="Biohuerto" value={txt(c.biohuerto_nombre)} />
+          <ReadField label="Etapa actual" value={etapa} />
+          <ReadField label="Fecha de siembra" value={fmt(c.fecha_siembra)} />
+          <ReadField label="Fecha estimada de cosecha" value={fmt(c.fecha_estimada_cosecha)} />
+          <ReadField label="Cantidad sembrada" value={cantidad} />
+          <ReadField label="Área sembrada" value={area} />
+          <ReadField label="Campaña" value={txt(c.campania)} />
+          <ReadField label="Estado" value={c.is_active === false ? "Baja" : "Activo"} />
+          {c.notas ? <ReadField label="Notas" value={c.notas} full /> : null}
         </div>
       </div>
     </Modal>
