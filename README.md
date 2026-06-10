@@ -124,6 +124,8 @@ GET/POST /api/alertas
 POST     /api/diagnostico/guiado
 POST     /api/diagnostico/imagen
 GET      /api/recomendaciones
+GET      /api/rag/status
+POST     /api/rag/documentos
 GET      /api/cosechas/public
 GET/POST /api/trazabilidad/practicas
 GET/POST /api/trazabilidad/costos
@@ -184,15 +186,19 @@ Invoke-RestMethod -Method Post http://localhost:8000/api/sync -Headers @{ Author
 
 ## IA
 
-El diagnostico guiado funciona sin API externa mediante fallback local. Para usar OpenAI:
+El diagnostico guiado funciona sin API externa mediante fallback local. Para usar RAG:
 
 ```text
-OPENAI_API_KEY=...
-OPENAI_MODEL_TEXT=...
-OPENAI_MODEL_VISION=...
+OPENAI_API_KEY=...          # embeddings para pgvector
+OPENAI_EMBED_MODEL=text-embedding-3-small
+OPENROUTER_API_KEY=...     # LLM de texto/vision
+OPENROUTER_MODEL_TEXT=...
+OPENROUTER_MODEL_VISION=...
+RAG_UPLOAD_MAX_MB=25
 ```
 
 La imagen es opcional. El PMV prioriza diagnostico guiado por formulario para mantener estabilidad.
+La pantalla `/rag` permite que un administrador suba PDFs; el backend los convierte a Markdown con Microsoft MarkItDown, genera embeddings y guarda los fragmentos en `rag_chunks` de pgvector.
 
 ## Offline
 

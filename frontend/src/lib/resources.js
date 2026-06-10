@@ -85,6 +85,23 @@ export const recomendacionesApi = {
     unwrap(api.post(`/api/recomendaciones/cultivo/${cultivoId}/general`, {}, { timeout: 270000 })),
 };
 
+export const ragApi = {
+  status: () => unwrap(api.get("/api/rag/status")),
+  uploadPdf: ({ file, fuente, reemplazar }) =>
+    unwrap(
+      api.post("/api/rag/documentos", file, {
+        params: {
+          filename: file.name,
+          fuente: fuente || undefined,
+          reemplazar,
+        },
+        headers: { "Content-Type": file.type || "application/pdf" },
+        timeout: 270000,
+      })
+    ),
+  removeFuente: (fuente) => unwrap(api.delete("/api/rag/fuentes", { params: { fuente } })),
+};
+
 export const trazabilidadApi = {
   practicas: (cultivoId) => unwrap(api.get("/api/trazabilidad/practicas", { params: { cultivo_id: cultivoId } })),
   crearPractica: (body) => unwrap(api.post("/api/trazabilidad/practicas", body)),

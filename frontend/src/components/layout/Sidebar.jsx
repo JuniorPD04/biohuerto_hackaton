@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import Icon from "../ui/Icon.jsx";
 import { alertasApi } from "../../lib/resources.js";
+import { useAuth } from "../../context/AuthContext.jsx";
 
 export const MODULES = [
   { id: "panel", label: "Panel", icon: "grid", path: "/panel", group: "main" },
@@ -19,6 +20,7 @@ export const MODULES = [
   { id: "biohuertos", label: "Biohuertos", icon: "sprout", path: "/biohuertos", group: "main" },
   { id: "cultivos", label: "Cultivos", icon: "leaf", path: "/cultivos", group: "main" },
   { id: "fitosanitario", label: "Fitosanitario", icon: "stethoscope", path: "/fitosanitario", group: "tools" },
+  { id: "rag", label: "RAG", icon: "database", path: "/rag", group: "tools", roles: ["admin"] },
   { id: "alertas", label: "Alertas", icon: "bell", path: "/alertas", group: "tools" },
   {
     id: "ofertas",
@@ -116,6 +118,7 @@ function ModuleItem({ m }) {
 
 export default function Sidebar() {
   const location = useLocation();
+  const { user } = useAuth();
   const [unseenCount, setUnseenCount] = useState(0);
 
   const refreshUnseen = async () => {
@@ -137,7 +140,7 @@ export default function Sidebar() {
     return () => window.removeEventListener("alertas:vista", onSeen);
   }, []);
 
-  const modules = MODULES.map((m) =>
+  const modules = MODULES.filter((m) => !m.roles || m.roles.includes(user?.rol)).map((m) =>
     m.id === "alertas" ? { ...m, badge: unseenCount > 0 ? unseenCount : null } : m
   );
   const main = modules.filter((m) => m.group === "main");

@@ -60,6 +60,8 @@ const PATHS = {
   seedling: "M12 22V12 M12 12C9 12 7 10 7 7c3 0 5 2 5 5Z M12 10c0-3 2-5 5-5 0 3-2 5-5 5Z",
   grid: "M3 3h7v7H3z M14 3h7v7h-7z M14 14h7v7h-7z M3 14h7v7H3z",
   list: "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01",
+  database:
+    "M12 3c5 0 9 1.6 9 3.5S17 10 12 10 3 8.4 3 6.5 7 3 12 3Z M3 6.5v5C3 13.4 7 15 12 15s9-1.6 9-3.5v-5 M3 11.5v5C3 18.4 7 20 12 20s9-1.6 9-3.5v-5",
 };
 
 export default function Icon({ name, size = 20, stroke = 1.8, className, style }) {

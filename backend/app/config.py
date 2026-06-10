@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
     openrouter_model_vision: str = Field(default="google/gemini-3-flash-preview", alias="OPENROUTER_MODEL_VISION")
     openrouter_model_text: str = Field(default="google/gemini-2.5-flash", alias="OPENROUTER_MODEL_TEXT")
+    rag_upload_max_mb: int = Field(default=25, ge=1, le=100, alias="RAG_UPLOAD_MAX_MB")
     fernet_key: str | None = Field(default=None, alias="FERNET_KEY")
     # Clave simetrica de pgcrypto para cifrar/descifrar campos sensibles
     # (telefono/direccion) en SQL con pgp_sym_encrypt/pgp_sym_decrypt.

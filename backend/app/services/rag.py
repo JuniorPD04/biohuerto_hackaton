@@ -9,6 +9,8 @@ de diagnostico.
 
 import json
 import logging
+import io
+import re
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -34,6 +36,16 @@ CHUNK_OVERLAP = 150
 TOP_K = 8
 MIN_PARAGRAPH_LEN = 20
 EMBED_BATCH_SIZE = 64
+FUENTE_MAX_LEN = 200
+FUENTES_MARKER = "Fuentes consultadas:"
+
+
+class RagSourceExistsError(ValueError):
+    """La fuente ya existe y la ingesta no pidio reemplazarla."""
+
+
+class RagConversionError(ValueError):
+    """El documento no pudo convertirse a Markdown util."""
 
 SYSTEM_PROMPT_CUIDADO = (
     "Eres un agronomo especialista en agricultura ecologica y biohuertos urbanos del "
@@ -99,6 +111,88 @@ def _vector_literal(embedding: list[float]) -> str:
     return "[" + ",".join(repr(float(x)) for x in embedding) + "]"
 
 
+def normalize_fuente(value: str | None, filename: str | None = None) -> str:
+    fallback = Path(filename or "documento-rag.pdf").stem or "Documento RAG"
+    candidate = value or fallback
+    candidate = re.sub(r"[\x00-\x1f]", "", candidate)
+    candidate = " ".join(candidate.replace("\\", " ").replace("/", " ").split())
+    if not candidate:
+        candidate = fallback
+    return candidate[:FUENTE_MAX_LEN].strip()
+
+
+def markdown_from_pdf_bytes(pdf_bytes: bytes) -> str:
+    """Convierte PDF a Markdown con MarkItDown sin persistir el archivo."""
+    try:
+        from markitdown import MarkItDown
+    except ImportError as exc:
+        raise RuntimeError(
+            "MarkItDown no esta instalado. Ejecuta pip install -r backend/requirements.txt."
+        ) from exc
+
+    try:
+        result = MarkItDown(enable_plugins=False).convert_stream(
+            io.BytesIO(pdf_bytes),
+            file_extension=".pdf",
+        )
+    except Exception as exc:
+        raise RagConversionError("No se pudo convertir el PDF a Markdown.") from exc
+
+    markdown = (getattr(result, "text_content", None) or getattr(result, "markdown", "") or "").strip()
+    if len(markdown) < MIN_PARAGRAPH_LEN:
+        raise RagConversionError("El PDF no contiene texto suficiente para vectorizar.")
+    return markdown
+
+
+async def ingest_markdown_document(
+    session: AsyncSession,
+    *,
+    fuente: str,
+    markdown: str,
+    replace: bool,
+) -> tuple[int, bool]:
+    """Vectoriza Markdown y lo guarda en rag_chunks. Devuelve (chunks, replaced)."""
+    chunks = _chunk_text(markdown)
+    if not chunks:
+        raise RagConversionError("El Markdown no genero fragmentos utiles para RAG.")
+
+    existing = await session.execute(
+        text("select count(*) from rag_chunks where fuente = :fuente"),
+        {"fuente": fuente},
+    )
+    existing_count = existing.scalar_one()
+    if existing_count > 0 and not replace:
+        raise RagSourceExistsError("Ya existe una fuente RAG con ese nombre.")
+
+    embeddings: list[list[float]] = []
+    for start in range(0, len(chunks), EMBED_BATCH_SIZE):
+        batch = chunks[start : start + EMBED_BATCH_SIZE]
+        embeddings.extend(await openai_embed(batch))
+
+    if len(embeddings) != len(chunks):
+        raise RuntimeError("La cantidad de embeddings no coincide con los fragmentos generados.")
+
+    if existing_count > 0:
+        await session.execute(text("delete from rag_chunks where fuente = :fuente"), {"fuente": fuente})
+
+    for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+        await session.execute(
+            text(
+                """
+                insert into rag_chunks (fuente, chunk_index, contenido, embedding)
+                values (:fuente, :idx, :contenido, (:embedding)::vector)
+                """
+            ),
+            {
+                "fuente": fuente,
+                "idx": idx,
+                "contenido": chunk,
+                "embedding": _vector_literal(embedding),
+            },
+        )
+    return len(chunks), existing_count > 0
+
+
 async def ensure_ingested(session_factory: Callable[[], AsyncSession]) -> None:
     """Carga la guia FAO en `rag_chunks` la primera vez que arranca el backend."""
     settings = get_settings()
@@ -107,7 +201,10 @@ async def ensure_ingested(session_factory: Callable[[], AsyncSession]) -> None:
         return
 
     async with session_factory() as session:
-        existing = await session.execute(text("select count(*) from rag_chunks"))
+        existing = await session.execute(
+            text("select count(*) from rag_chunks where fuente = :fuente"),
+            {"fuente": FUENTE},
+        )
         if existing.scalar_one() > 0:
             return
 
@@ -153,7 +250,7 @@ async def ensure_ingested(session_factory: Callable[[], AsyncSession]) -> None:
     logger.info("RAG: ingesta completa (%d fragmentos)", len(chunks))
 
 
-async def _retrieve(session: AsyncSession, query: str) -> list[str]:
+async def _retrieve(session: AsyncSession, query: str) -> list[dict[str, str]]:
     try:
         embedding = (await openai_embed([query]))[0]
     except (httpx.HTTPError, RuntimeError, KeyError, IndexError) as exc:
@@ -163,7 +260,7 @@ async def _retrieve(session: AsyncSession, query: str) -> list[str]:
     result = await session.execute(
         text(
             """
-            select contenido
+            select fuente, contenido
             from rag_chunks
             order by embedding <=> (:embedding)::vector
             limit :top_k
@@ -171,7 +268,7 @@ async def _retrieve(session: AsyncSession, query: str) -> list[str]:
         ),
         {"embedding": _vector_literal(embedding), "top_k": TOP_K},
     )
-    return [row[0] for row in result.all()]
+    return [{"fuente": row[0], "contenido": row[1]} for row in result.all()]
 
 
 async def _generar_json(*, system: str, prompt: str, contexto_log: str) -> tuple[str, list[str]]:
@@ -205,10 +302,10 @@ async def _generar_json(*, system: str, prompt: str, contexto_log: str) -> tuple
     return recomendacion, acciones
 
 
-async def generar_recomendacion(session: AsyncSession, result: DiagnosticoResult) -> tuple[str, list[str]]:
-    """Devuelve (recomendacion, acciones) usando RAG + OpenRouter, o ("", []) si no aplica/falla."""
+async def generar_recomendacion(session: AsyncSession, result: DiagnosticoResult) -> tuple[str, list[str], list[str]]:
+    """Devuelve (recomendacion, acciones, fuentes) usando RAG + OpenRouter."""
     if result.es_sano:
-        return "", []
+        return "", [], []
 
     query = f"Enfermedad de la planta: {result.problema}"
     if result.nombre_cientifico:
@@ -220,9 +317,12 @@ async def generar_recomendacion(session: AsyncSession, result: DiagnosticoResult
 
     chunks = await _retrieve(session, query)
     if not chunks:
-        return "", []
+        return "", [], []
 
-    contexto = "\n\n".join(f"- {c}" for c in chunks)
+    fuentes = sorted({chunk["fuente"] for chunk in chunks if chunk["fuente"]})
+    contexto = "\n\n".join(
+        f"- Fuente: {chunk['fuente']}\n  Fragmento: {chunk['contenido']}" for chunk in chunks
+    )
     prompt = (
         f"PROBLEMA DETECTADO: {result.problema}\n"
         + (f"NOMBRE CIENTIFICO: {result.nombre_cientifico}\n" if result.nombre_cientifico else "")
@@ -231,11 +331,12 @@ async def generar_recomendacion(session: AsyncSession, result: DiagnosticoResult
         + "instrucciones del sistema sobre cuando usar el contexto y cuando usar tu propio conocimiento."
     )
 
-    return await _generar_json(
+    recomendacion, acciones = await _generar_json(
         system=SYSTEM_PROMPT,
         prompt=prompt,
         contexto_log="recomendacion de diagnostico",
     )
+    return recomendacion, acciones, fuentes
 
 
 async def generar_recomendacion_cultivo(

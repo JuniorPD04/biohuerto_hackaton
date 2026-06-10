@@ -22,6 +22,7 @@ from app.services.ai_service import diagnostico_guiado
 from app.services.attachments import principal_image_subquery, set_principal_image
 from app.services.plant_disease import ImagenSinPlantaError, diagnosticar_imagen
 from app.services.rag import FUENTE as RAG_FUENTE
+from app.services.rag import FUENTES_MARKER
 from app.services.rag import generar_recomendacion
 
 router = APIRouter(prefix="/api/diagnostico", tags=["diagnostico"])
@@ -88,7 +89,14 @@ async def _insert_recomendacion(
     titulo: str,
     recomendacion: str,
     acciones: list[str],
+    fuentes: list[str] | None = None,
 ) -> None:
+    cuerpo = recomendacion.strip()
+    if acciones:
+        cuerpo += "\n- " + "\n- ".join(acciones)
+    if fuentes:
+        cuerpo += "\n\n" + FUENTES_MARKER + "\n" + "\n".join(f"- {fuente}" for fuente in fuentes)
+    fuente_label = "; ".join(fuentes or [])[:200] or RAG_FUENTE
     await session.execute(
         text(
             """
@@ -104,8 +112,8 @@ async def _insert_recomendacion(
             "diagnostico_id": diagnostico_id,
             "cultivo_id": cultivo_id,
             "titulo": titulo,
-            "cuerpo": recomendacion + ("\n- " + "\n- ".join(acciones) if acciones else ""),
-            "fuente": RAG_FUENTE,
+            "cuerpo": cuerpo,
+            "fuente": fuente_label,
         },
     )
 
@@ -314,7 +322,7 @@ async def create_recomendacion(
         nombre_cientifico=row["nombre_cientifico"],
         es_sano=False,
     )
-    recomendacion, acciones = await generar_recomendacion(session, result)
+    recomendacion, acciones, fuentes = await generar_recomendacion(session, result)
     if recomendacion:
         await _insert_recomendacion(
             session,
@@ -323,6 +331,7 @@ async def create_recomendacion(
             titulo=row["resultado"] or "",
             recomendacion=recomendacion,
             acciones=acciones,
+            fuentes=fuentes,
         )
         await session.commit()
 

@@ -23,6 +23,7 @@ from app.routers import (
     diagnostico,
     incidencias,
     monitoreo,
+    rag,
     recomendaciones,
     trazabilidad,
     users,
@@ -58,6 +59,7 @@ app.include_router(cuidados.router)
 app.include_router(alertas.router)
 app.include_router(trazabilidad.router)
 app.include_router(diagnostico.router)
+app.include_router(rag.router)
 app.include_router(recomendaciones.router)
 app.include_router(cosechas.router)
 app.include_router(dashboard.router)

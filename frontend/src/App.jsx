@@ -10,6 +10,7 @@ import CultivoWorkspace from "./pages/CultivoWorkspace.jsx";
 import Fitosanitario from "./pages/Fitosanitario.jsx";
 import Alertas from "./pages/Alertas.jsx";
 import Ofertas from "./pages/Ofertas.jsx";
+import Rag from "./pages/Rag.jsx";
 
 function BootScreen() {
   return (
@@ -54,6 +55,7 @@ export default function App() {
         <Route path="cultivos" element={<Cultivos />} />
         <Route path="cultivos/:id" element={<CultivoWorkspace />} />
         <Route path="fitosanitario" element={<Fitosanitario />} />
+        <Route path="rag" element={<Rag />} />
         <Route path="alertas" element={<Alertas />} />
         <Route path="ofertas" element={<Navigate to="/ofertas/cosechas" replace />} />
         <Route path="ofertas/:tab" element={<Ofertas />} />
