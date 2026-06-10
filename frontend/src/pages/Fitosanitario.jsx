@@ -7,6 +7,8 @@ import {
   Badge,
   Modal,
   Field,
+  Input,
+  Textarea,
   Select,
   Icon,
   ImageUpload,
@@ -16,6 +18,24 @@ import { fmtFecha } from "../lib/theme.js";
 import { diagnosticoApi, cultivosApi } from "../lib/resources.js";
 
 const PARTES = ["Hoja", "Fruto", "Tallo", "Raíz", "Planta completa"];
+
+// Catálogo de síntomas frecuentes en biohuertos (diagnóstico guiado).
+const SINTOMAS_CATALOGO = [
+  "Manchas en las hojas",
+  "Hojas amarillas (clorosis)",
+  "Hojas marchitas o caídas",
+  "Polvo blanco (oídio)",
+  "Manchas marrones o negras",
+  "Anillos concéntricos en las manchas",
+  "Agujeros o mordeduras",
+  "Insectos visibles",
+  "Pulgones o cochinilla",
+  "Hojas enrolladas o deformes",
+  "Pudrición (tallo, raíz o fruto)",
+  "Moho, telaraña o tela blanca",
+  "Crecimiento lento o enanismo",
+  "Bordes de hojas quemados",
+];
 
 const cultivoNombre = (c) =>
   c ? [c.especie, c.variedad].filter(Boolean).join(" · ") : "Sin cultivo";
@@ -90,7 +110,7 @@ export default function Fitosanitario() {
     <div className="animate-fade">
       <PageHeader
         title="Diagnóstico fitosanitario"
-        subtitle="Sube una foto de la hoja afectada y obtén un diagnóstico automático con IA."
+        subtitle="Diagnostica con IA por foto de la hoja o respondiendo sobre los síntomas observados."
         action={
           <Button icon="plus" onClick={() => setOpen(true)}>
             Nuevo diagnóstico
@@ -104,7 +124,7 @@ export default function Fitosanitario() {
         <EmptyState
           icon="stethoscope"
           title="Sin diagnósticos registrados"
-          desc="Registra un nuevo diagnóstico subiendo una foto del cultivo para evaluar su estado sanitario."
+          desc="Registra un nuevo diagnóstico: sube una foto del cultivo o responde sobre los síntomas que observas."
           action={
             <Button icon="plus" onClick={() => setOpen(true)}>
               Nuevo diagnóstico
@@ -218,20 +238,42 @@ export default function Fitosanitario() {
 }
 
 function DiagnosticoModal({ open, onClose, cultivos, toast, onCreated }) {
+  const [modo, setModo] = useState("imagen"); // "imagen" | "guiado"
   const [cultivoId, setCultivoId] = useState("");
+  const [especie, setEspecie] = useState("");
   const [parte, setParte] = useState("Hoja");
   const [foto, setFoto] = useState("");
+  // Estado del diagnóstico guiado
+  const [sintomas, setSintomas] = useState([]);
+  const [otroSintoma, setOtroSintoma] = useState("");
+  const [zona, setZona] = useState("");
+  const [tiempo, setTiempo] = useState("");
+  const [observaciones, setObservaciones] = useState("");
   const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
     if (open) {
+      setModo("imagen");
       setCultivoId("");
-      setParte("");
+      setEspecie("");
+      setParte("Hoja");
       setFoto("");
+      setSintomas([]);
+      setOtroSintoma("");
+      setZona("");
+      setTiempo("");
+      setObservaciones("");
     }
   }, [open]);
 
-  const submit = async () => {
+  const toggleSintoma = (s) =>
+    setSintomas((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+
+  // Especie: del cultivo seleccionado o, si no hay, del campo de texto.
+  const cultivoSel = cultivos.find((c) => String(c.id) === String(cultivoId));
+  const especieFinal = cultivoSel ? cultivoSel.especie : especie.trim();
+
+  const submitImagen = async () => {
     const parsed = parseDataUrl(foto);
     if (!parsed) {
       toast("Sube una foto del cultivo (PNG o JPG)", "danger");
@@ -253,25 +295,88 @@ function DiagnosticoModal({ open, onClose, cultivos, toast, onCreated }) {
     }
   };
 
+  const submitGuiado = async () => {
+    if (especieFinal.length < 2) {
+      toast("Selecciona el cultivo o escribe la especie", "danger");
+      return;
+    }
+    const todos = [...sintomas];
+    if (otroSintoma.trim()) todos.push(otroSintoma.trim());
+    if (todos.length === 0) {
+      toast("Selecciona al menos un síntoma", "danger");
+      return;
+    }
+    setEnviando(true);
+    try {
+      await diagnosticoApi.guiado({
+        cultivo_id: cultivoId || null,
+        especie: especieFinal,
+        parte_planta: parte || "Hoja",
+        sintomas: todos,
+        zona_afectada: zona.trim() || null,
+        tiempo_dias: tiempo === "" ? null : Number(tiempo),
+        observaciones_previas: observaciones.trim() || null,
+      });
+      toast("Diagnóstico guiado generado correctamente");
+      onCreated();
+    } catch {
+      toast("No se pudo generar el diagnóstico ahora. Inténtalo más tarde.", "danger");
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const esImagen = modo === "imagen";
+
   return (
     <Modal
       open={open}
       onClose={onClose}
       title="Nuevo diagnóstico"
-      subtitle="Sube una foto de la hoja afectada para que la IA detecte posibles enfermedades."
-      width={520}
+      subtitle="Elige cómo diagnosticar: subiendo una foto o respondiendo sobre los síntomas."
+      width={560}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          <Button icon="stethoscope" onClick={submit} disabled={enviando}>
-            {enviando ? "Analizando…" : "Diagnosticar"}
+          <Button
+            icon="stethoscope"
+            onClick={esImagen ? submitImagen : submitGuiado}
+            disabled={enviando}
+          >
+            {enviando
+              ? esImagen
+                ? "Analizando imagen…"
+                : "Analizando síntomas…"
+              : "Diagnosticar"}
           </Button>
         </>
       }
     >
       <div className="grid gap-[18px]">
+        {/* Selector de modo */}
+        <div className="grid grid-cols-2 gap-2 rounded-xl bg-chip p-[5px]">
+          {[
+            { id: "imagen", icon: "camera", label: "Por foto" },
+            { id: "guiado", icon: "clipboard", label: "Guiado por síntomas" },
+          ].map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setModo(m.id)}
+              className={`inline-flex items-center justify-center gap-2 rounded-[9px] py-[10px] text-[14px] font-bold transition-all ${
+                modo === m.id
+                  ? "bg-white text-primary shadow-[0_1px_3px_rgba(20,40,30,.12)]"
+                  : "bg-transparent text-muted-2"
+              }`}
+            >
+              <Icon name={m.icon} size={17} />
+              {m.label}
+            </button>
+          ))}
+        </div>
+
         <Field label="Cultivo (opcional)">
           <Select value={cultivoId} onChange={(e) => setCultivoId(e.target.value)}>
             <option value="">Sin asociar a un cultivo</option>
@@ -283,9 +388,20 @@ function DiagnosticoModal({ open, onClose, cultivos, toast, onCreated }) {
           </Select>
         </Field>
 
-        <Field label="Parte de la planta afectada (opcional)">
+        {/* En guiado, si no hay cultivo, pedir la especie a mano */}
+        {!esImagen && !cultivoId && (
+          <Field label="Especie / cultivo" hint="Necesario para el diagnóstico guiado.">
+            <Input
+              value={especie}
+              onChange={(e) => setEspecie(e.target.value)}
+              placeholder="Ej: Tomate, Lechuga, Ají…"
+            />
+          </Field>
+        )}
+
+        <Field label={esImagen ? "Parte de la planta afectada (opcional)" : "Parte de la planta afectada"}>
           <Select value={parte} onChange={(e) => setParte(e.target.value)}>
-            <option value="">Sin especificar</option>
+            {esImagen && <option value="">Sin especificar</option>}
             {PARTES.map((p) => (
               <option key={p} value={p}>
                 {p}
@@ -294,14 +410,77 @@ function DiagnosticoModal({ open, onClose, cultivos, toast, onCreated }) {
           </Select>
         </Field>
 
-        <Field label="Foto de la planta">
-          <ImageUpload
-            key={open ? "open" : "closed"}
-            height={180}
-            label="Arrastra una foto de la hoja o haz clic para subirla"
-            onChange={setFoto}
-          />
-        </Field>
+        {esImagen ? (
+          <Field label="Foto de la planta">
+            <ImageUpload
+              key={open ? "open" : "closed"}
+              height={180}
+              label="Arrastra una foto de la hoja o haz clic para subirla"
+              onChange={setFoto}
+            />
+          </Field>
+        ) : (
+          <>
+            <Field label="¿Qué síntomas observas?" hint="Selecciona todos los que apliquen.">
+              <div className="flex flex-wrap gap-2">
+                {SINTOMAS_CATALOGO.map((s) => {
+                  const on = sintomas.includes(s);
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => toggleSintoma(s)}
+                      className={`rounded-full border px-[13px] py-[7px] text-[13px] font-semibold transition-colors ${
+                        on
+                          ? "border-primary bg-accent-50 text-primary"
+                          : "border-line bg-white text-muted-1 hover:bg-chip"
+                      }`}
+                    >
+                      {on && <Icon name="check" size={13} stroke={2.6} className="mr-1 inline align-middle" />}
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+
+            <Field label="Otro síntoma (opcional)">
+              <Input
+                value={otroSintoma}
+                onChange={(e) => setOtroSintoma(e.target.value)}
+                placeholder="Describe otro síntoma que no esté en la lista"
+              />
+            </Field>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Field label="Zona / ubicación del daño (opcional)">
+                <Input
+                  value={zona}
+                  onChange={(e) => setZona(e.target.value)}
+                  placeholder="Ej: hojas inferiores, bordes…"
+                />
+              </Field>
+              <Field label="¿Hace cuántos días? (opcional)">
+                <Input
+                  type="number"
+                  min="0"
+                  value={tiempo}
+                  onChange={(e) => setTiempo(e.target.value)}
+                  placeholder="Ej: 5"
+                />
+              </Field>
+            </div>
+
+            <Field label="Observaciones adicionales (opcional)">
+              <Textarea
+                rows={3}
+                value={observaciones}
+                onChange={(e) => setObservaciones(e.target.value)}
+                placeholder="Riego, clima reciente, si afecta a varias plantas, etc."
+              />
+            </Field>
+          </>
+        )}
       </div>
     </Modal>
   );

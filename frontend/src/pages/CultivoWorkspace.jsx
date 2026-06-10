@@ -1483,7 +1483,12 @@ function SeccionCuidados({ cultivoId }) {
                     </span>
                   )}
                   <div className="flex items-center gap-1">
-                    <IconBtn name="edit" title="Editar" onClick={() => openEdit(c)} />
+                    <IconBtn
+                      name="edit"
+                      title={c.activo ? "Editar" : "Reactiva el cuidado para editarlo"}
+                      disabled={!c.activo}
+                      onClick={() => openEdit(c)}
+                    />
                     <IconBtn name="trash" title="Eliminar" tone="danger" onClick={() => setToDelete(c)} />
                   </div>
                 </div>

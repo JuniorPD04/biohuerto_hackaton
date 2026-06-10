@@ -26,3 +26,4 @@ class PanelOut(BaseModel):
     sostenibilidad: dict
     huella_total_kg_co2: float
     compost_kg: float
+    semaforo_ambiental: list[dict]

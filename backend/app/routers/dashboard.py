@@ -155,6 +155,69 @@ async def panel_overview(
     )
     hrow = huella.mappings().first()
 
+    # --- Semáforo ambiental por práctica, desglosado por cultivo ---
+    #  Datos reales de huella_carbono agregados por cultivo (un cultivo puede
+    #  tener varios periodos). El frontend arma las 4 prácticas y su semáforo.
+    sem_huella = await session.execute(
+        text(
+            f"""
+            select c.id::text as cultivo_id, c.especie, b.nombre as biohuerto,
+                   coalesce(sum(h.compost_kg), 0) + coalesce(sum(h.abono_verde_kg), 0) as compost_kg,
+                   coalesce(sum(h.agua_m3), 0) as agua_m3,
+                   coalesce(sum(h.area_sin_agroquimicos_m2), 0) as area_m2,
+                   coalesce(sum(h.aplicaciones_control_bio), 0) as aplic_ctrl_bio,
+                   coalesce(sum(h.huella_neta_kg_co2), 0) as huella
+            from cultivos c
+            join huella_carbono h on h.cultivo_id = c.id
+            left join biohuertos b on b.id = c.biohuerto_id
+            where c.deleted_at is null
+              {"and c.usuario_id = :uid" if mine else ""}
+            group by c.id, c.especie, b.nombre
+            order by c.especie
+            """
+        ),
+        uid,
+    )
+    # Nº de aplicaciones de compost y control biológico por cultivo (de prácticas).
+    sem_practicas = await session.execute(
+        text(
+            f"""
+            select p.cultivo_id::text as cultivo_id,
+                   count(*) filter (
+                     where tp.nombre in ('Compost / Abono orgánico', 'Abono verde')
+                   ) as n_compost,
+                   count(*) filter (where cp.nombre = 'Biológica') as n_control_bio
+            from practicas_agricolas p
+            join tipos_practica tp on tp.id = p.tipo_id
+            join categorias_practica cp on cp.id = tp.categoria_id
+            where p.deleted_at is null
+              {cultivo_scope.replace("cultivo_id", "p.cultivo_id")}
+            group by p.cultivo_id
+            """
+        ),
+        uid,
+    )
+    practicas_por_cultivo = {
+        r["cultivo_id"]: r for r in sem_practicas.mappings().all()
+    }
+    semaforo_ambiental = []
+    for r in sem_huella.mappings().all():
+        pr = practicas_por_cultivo.get(r["cultivo_id"], {})
+        semaforo_ambiental.append(
+            {
+                "cultivo_id": r["cultivo_id"],
+                "especie": r["especie"],
+                "biohuerto": r["biohuerto"],
+                "compost_kg": _f(r["compost_kg"]),
+                "n_compost": int(pr.get("n_compost") or 0),
+                "agua_m3": _f(r["agua_m3"]),
+                "area_m2": _f(r["area_m2"]),
+                "aplicaciones_control_bio": int(r["aplic_ctrl_bio"] or 0),
+                "n_control_bio": int(pr.get("n_control_bio") or 0),
+                "huella_neta_kg_co2": _f(r["huella"]),
+            }
+        )
+
     return PanelOut(
         horizonte_dias=dias,
         proximas_cosechas=cosechas_rows[:5],
@@ -168,6 +231,7 @@ async def panel_overview(
         sostenibilidad=sostenibilidad,
         huella_total_kg_co2=_f(hrow["huella"]),
         compost_kg=_f(hrow["compost"]),
+        semaforo_ambiental=semaforo_ambiental,
     )
 
 

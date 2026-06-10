@@ -212,6 +212,8 @@ async def create_diagnostico_guiado(
         sintomas=payload.sintomas,
         zona_afectada=payload.zona_afectada,
         tiempo_dias=payload.tiempo_dias,
+        parte_planta=payload.parte_planta,
+        observaciones=payload.observaciones_previas,
     )
     return await _save_diagnostico(
         session=session,

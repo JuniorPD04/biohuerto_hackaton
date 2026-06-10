@@ -172,7 +172,7 @@ export default function Usuarios() {
                 <Cell align="right">
                   <div style={{ display: "flex", gap: 8, marginLeft: "auto", alignItems: "center" }}>
                     <IconBtn name="eye" title="Ver detalle" onClick={() => setView(u)} />
-                    <IconBtn name="edit" title="Editar" tone="primary" onClick={() => setEditing(u)} />
+                    <IconBtn name="edit" title={dim ? "Reactiva al usuario para editarlo" : "Editar"} tone="primary" disabled={dim} onClick={() => setEditing(u)} />
                     <Toggle on={u.is_active} title={u.is_active ? "Dar de baja" : "Reactivar"} onClick={() => toggleActivo(u)} />
                     <IconBtn name="trash" title="Eliminar" tone="danger" onClick={() => eliminar(u)} />
                   </div>

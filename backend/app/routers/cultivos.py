@@ -183,11 +183,18 @@ async def update_cultivo(
     current_user: CurrentUser = Depends(require_role("productor", "admin")),
     session: AsyncSession = Depends(get_session),
 ) -> CultivoOut:
-    await _ensure_cultivo_access(session, cultivo_id, current_user)
+    current = await _ensure_cultivo_access(session, cultivo_id, current_user)
     values = payload.model_dump(exclude_unset=True)
     if not values:
         row = await _fetch_cultivo_row(session, cultivo_id)
         return _to_cultivo_out(row)
+    # Un cultivo dado de baja (is_active = false) no se puede editar: solo se
+    # admite el cambio que lo reactiva (is_active = true).
+    if not current["is_active"] and values.get("is_active") is not True:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede editar un cultivo dado de baja. Reactívalo primero.",
+        )
 
     params: dict = {"id": cultivo_id}
     clauses: list[str] = []

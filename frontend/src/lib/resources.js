@@ -74,6 +74,7 @@ export const cuidadosApi = {
 export const diagnosticoApi = {
   list: (params) => unwrap(api.get("/api/diagnostico", { params })),
   imagen: (body) => unwrap(api.post("/api/diagnostico/imagen", body, { timeout: 60000 })),
+  guiado: (body) => unwrap(api.post("/api/diagnostico/guiado", body, { timeout: 270000 })),
   recomendacion: (id) => unwrap(api.post(`/api/diagnostico/${id}/recomendacion`, {}, { timeout: 270000 })),
 };
 

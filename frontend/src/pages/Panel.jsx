@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { jsPDF } from "jspdf";
 import Icon from "../components/ui/Icon.jsx";
 import { Button, Card, EmptyState, Modal, PageHeader, Select } from "../components/ui/primitives.jsx";
 import { useToast } from "../components/ui/Toast.jsx";
@@ -60,14 +61,33 @@ export default function Panel() {
   const costBars = (data.costos || [])
     .filter((c) => c.monto > 0)
     .map((c) => ({ label: c.categoria, color: COSTO_COLORES[c.categoria] || "#9aa39a", value: c.monto }));
-  const sost = data.sostenibilidad || { sostenibles: 0, total: 0, score: 0 };
-  const huellaT = (data.huella_total_kg_co2 || 0) / 1000;
 
   const reporte = { data, costBars, porEtapa, totalCultivos, horizonte };
 
   return (
     <div className="animate-fade">
       <PageHeader title="Panel" subtitle="Resumen del estado productivo, alertas y sostenibilidad del biohuerto." />
+
+      {/* Reporte resumido (acción principal, arriba del panel) */}
+      <Card pad="p-6" className="mb-6 flex flex-wrap items-center justify-between gap-5">
+        <div className="flex items-center gap-[14px]">
+          <span className="grid h-[46px] w-[46px] place-items-center rounded-xl bg-accent-50 text-primary">
+            <Icon name="chart" size={24} />
+          </span>
+          <div>
+            <h3 className="m-0 text-[17px] font-extrabold text-text">Reporte resumido del biohuerto</h3>
+            <p className="mt-[3px] text-[13.5px] text-muted-2">Incluye cultivos, cosechas, costos e indicadores de sostenibilidad.</p>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <Button variant="secondary" icon="eye" onClick={() => setPreview(true)}>
+            Vista previa
+          </Button>
+          <Button icon="download" onClick={() => descargarReporte(reporte, toast)}>
+            Descargar PDF
+          </Button>
+        </div>
+      </Card>
 
       {/* Fila 1: próximas cosechas | alertas + etapas */}
       <div className="mb-6 grid items-stretch gap-6 lg:grid-cols-[1.15fr_1fr]">
@@ -175,81 +195,31 @@ export default function Panel() {
         </div>
       </div>
 
-      {/* Fila 2: costos | semáforo */}
-      <div className="mb-6 grid gap-6 lg:grid-cols-[1.3fr_1fr]">
-        <Card pad="p-[26px]">
-          <div className="mb-[22px] flex items-start justify-between">
-            <div>
-              <h3 className="m-0 text-[19px] font-extrabold text-text">Costos acumulados</h3>
-              <p className="mt-1 text-[13.5px] text-muted-2">Distribución por categoría · Campaña actual</p>
+      {/* Fila 2: (costos + eco cards) | semáforo ambiental */}
+      <div className="mb-6 grid items-start gap-6 lg:grid-cols-[1.3fr_1fr]">
+        <div className="grid content-start gap-6">
+          <Card pad="p-[26px]">
+            <div className="mb-[22px] flex items-start justify-between">
+              <div>
+                <h3 className="m-0 text-[19px] font-extrabold text-text">Costos acumulados</h3>
+                <p className="mt-1 text-[13.5px] text-muted-2">Distribución por categoría · Campaña actual</p>
+              </div>
+              <div className="text-right">
+                <div className="text-[28px] font-extrabold text-terracotta">{fmtMoneda(data.costo_total)}</div>
+                <div className="text-[12.5px] font-semibold text-muted-2">total invertido</div>
+              </div>
             </div>
-            <div className="text-right">
-              <div className="text-[28px] font-extrabold text-terracotta">{fmtMoneda(data.costo_total)}</div>
-              <div className="text-[12.5px] font-semibold text-muted-2">total invertido</div>
-            </div>
-          </div>
-          <CostBars data={costBars} />
-        </Card>
+            <CostBars data={costBars} />
+          </Card>
 
-        <Card pad="p-[26px]" className="!border-accent-100 bg-gradient-to-br from-accent-50 to-white">
-          <h3 className="m-0 text-[19px] font-extrabold text-text">Semáforo ambiental</h3>
-          <p className="mb-[18px] mt-1 text-[13.5px] text-muted-2">Índice de prácticas sostenibles</p>
-          <div className="mb-[10px] grid place-items-center">
-            <Gauge value={sost.score} />
-          </div>
-          <div className="mb-4 flex justify-center gap-2">
-            {["#d6584a", "#e2b53a", "#3f9a48"].map((c, i) => (
-              <span
-                key={i}
-                className="h-2 w-11 rounded-full"
-                style={{
-                  background: c,
-                  opacity:
-                    (sost.score < 40 && i === 0) ||
-                    (sost.score >= 40 && sost.score < 70 && i === 1) ||
-                    (sost.score >= 70 && i === 2)
-                      ? 1
-                      : 0.25,
-                }}
-              />
-            ))}
-          </div>
-          <p className="m-0 text-center text-[13.5px] leading-[1.5] text-accent-800">
-            <strong>
-              {sost.sostenibles} de {sost.total}
-            </strong>{" "}
-            prácticas registradas son sostenibles.
-          </p>
-        </Card>
-      </div>
-
-      {/* Fila 3: eco cards */}
-      <div className="grid gap-6 sm:grid-cols-3">
-        <EcoCard icon="recycle" tint="albahaca" titulo="Huella de carbono" valor={`${huellaT.toFixed(2)} t CO₂e`} sub="huella neta · periodo actual" positive />
-        <EcoCard icon="seedling" tint="zanahoria" titulo="Compost aplicado" valor={`${data.compost_kg.toFixed(0)} kg`} sub="compost registrado en el periodo" />
-        <EcoCard icon="drop" tint="espinaca" titulo="Costo de agua acumulado" valor={fmtMoneda(data.costo_agua)} sub="categoría Agua en costeo de cultivos" />
-      </div>
-
-      {/* Reporte resumido */}
-      <Card pad="p-6" className="mt-6 flex flex-wrap items-center justify-between gap-5">
-        <div className="flex items-center gap-[14px]">
-          <span className="grid h-[46px] w-[46px] place-items-center rounded-xl bg-accent-50 text-primary">
-            <Icon name="chart" size={24} />
-          </span>
-          <div>
-            <h3 className="m-0 text-[17px] font-extrabold text-text">Reporte resumido del biohuerto</h3>
-            <p className="mt-[3px] text-[13.5px] text-muted-2">Incluye cultivos, cosechas, costos e indicadores de sostenibilidad.</p>
+          <div className="grid gap-6 sm:grid-cols-2">
+            <EcoCard icon="seedling" tint="zanahoria" titulo="Compost aplicado" valor={`${data.compost_kg.toFixed(0)} kg`} sub="compost registrado en el periodo" />
+            <EcoCard icon="drop" tint="espinaca" titulo="Costo de agua acumulado" valor={fmtMoneda(data.costo_agua)} sub="categoría Agua en costeo de cultivos" />
           </div>
         </div>
-        <div className="flex gap-3">
-          <Button variant="secondary" icon="eye" onClick={() => setPreview(true)}>
-            Vista previa
-          </Button>
-          <Button icon="download" onClick={() => descargarReporte(reporte, toast)}>
-            Descargar PDF
-          </Button>
-        </div>
-      </Card>
+
+        <SemaforoAmbiental cultivos={data.semaforo_ambiental} />
+      </div>
 
       <Modal
         open={preview}
@@ -348,32 +318,204 @@ function CostBars({ data }) {
   );
 }
 
-/* ---- Gauge semicircular ---- */
-function Gauge({ value }) {
-  const r = 58;
-  const circ = Math.PI * r;
-  const color = value >= 70 ? "#3f9a48" : value >= 40 ? "#e2b53a" : "#d6584a";
+/* ---- Semáforo ambiental por práctica ---- */
+const SEMAFORO_COLORS = {
+  verde: "#3f9a48",
+  amarillo: "#e2b53a",
+  rojo: "#d6584a",
+};
+
+/* Mini semáforo vertical de 3 luces (la activa enciende, las demás atenuadas) */
+function MiniSemaforo({ estado }) {
+  const luces = ["rojo", "amarillo", "verde"];
   return (
-    <div className="relative h-24 w-40">
-      <svg width="160" height="96" viewBox="0 0 160 96">
-        <path d={`M16 88 A ${r} ${r} 0 0 1 144 88`} fill="none" stroke="#e2e8de" strokeWidth="14" strokeLinecap="round" />
-        <path
-          d={`M16 88 A ${r} ${r} 0 0 1 144 88`}
-          fill="none"
-          stroke={color}
-          strokeWidth="14"
-          strokeLinecap="round"
-          strokeDasharray={circ}
-          strokeDashoffset={circ * (1 - value / 100)}
-        />
-      </svg>
-      <div className="absolute bottom-0 left-0 right-0 text-center">
-        <div className="text-[34px] font-extrabold leading-none" style={{ color }}>
-          {value}%
-        </div>
-        <div className="mt-[2px] text-xs font-bold uppercase tracking-[.05em] text-muted-2">Sostenible</div>
-      </div>
+    <div
+      className="flex flex-shrink-0 flex-col items-center gap-[6px] rounded-full border-2 bg-white px-[7px] py-[9px]"
+      style={{ borderColor: "#9aa79a", boxShadow: "inset 0 0 0 1px #ffffff, 0 1px 2px rgba(28,42,32,.12)" }}
+    >
+      {luces.map((l) => {
+        const on = l === estado;
+        const c = SEMAFORO_COLORS[l];
+        return (
+          <span
+            key={l}
+            className="h-[13px] w-[13px] rounded-full border transition-all"
+            style={{
+              background: on ? c : "#e3e8e0",
+              borderColor: on ? c : "#9aa79a",
+              boxShadow: on ? `0 0 0 3px ${c}33` : "inset 0 1px 1px rgba(28,42,32,.12)",
+            }}
+          />
+        );
+      })}
     </div>
+  );
+}
+
+/* Una fila = una práctica evaluada */
+function PracticaRow({ icon, titulo, valor, criterio, estado }) {
+  const ok = estado === "verde";
+  const cColor = SEMAFORO_COLORS[estado];
+  return (
+    <div className="flex items-center justify-between gap-4 border-t border-line py-[14px] first:border-t-0">
+      <div className="min-w-0">
+        <div className="flex items-center gap-[9px]">
+          <Icon name={icon} size={17} stroke={2} className="flex-shrink-0 text-muted-1" />
+          <span className="text-[14.5px] font-extrabold text-text">{titulo}</span>
+        </div>
+        <div className="mt-[5px] text-[12.5px] font-semibold text-muted-1">{valor}</div>
+        <div className="mt-[3px] flex items-center gap-[5px] text-[12px] font-bold" style={{ color: cColor }}>
+          <Icon name={ok ? "check" : "alertTri"} size={13} stroke={2.4} />
+          {criterio}
+        </div>
+      </div>
+      <MiniSemaforo estado={estado} />
+    </div>
+  );
+}
+
+/* Construye las 4 prácticas evaluadas (con su semáforo) para un cultivo */
+function buildSemaforoRows(c) {
+  const compostKg = c.compost_kg || 0;
+  const nCompost = c.n_compost || 0;
+  const aguaM3 = c.agua_m3 || 0;
+  const areaM2 = c.area_m2 || 0;
+  const ctrlBio = c.aplicaciones_control_bio || 0;
+
+  // Umbral de agua: óptimo ≈ 0.4 m³/m² · alto hasta 0.7 m³/m²
+  const umbralOptimo = Math.round(areaM2 * 0.4);
+  const ratioAgua = areaM2 > 0 ? aguaM3 / areaM2 : 0;
+  const estadoAgua = ratioAgua <= 0.42 ? "verde" : ratioAgua <= 0.7 ? "amarillo" : "rojo";
+
+  return [
+    {
+      icon: "recycle",
+      titulo: "Compost / Abono orgánico",
+      valor:
+        compostKg > 0
+          ? `${compostKg.toFixed(0)} kg aplicados${nCompost ? ` · ${nCompost} ${nCompost === 1 ? "aplicación" : "aplicaciones"} esta campaña` : ""}`
+          : "Sin abono orgánico registrado",
+      criterio: compostKg > 0 ? "Óptimo: al menos 1 aplicación por campaña" : "Pendiente: aplicar abono orgánico",
+      estado: compostKg > 0 ? "verde" : "rojo",
+    },
+    {
+      icon: "drop",
+      titulo: "Consumo de agua",
+      valor: `${aguaM3.toFixed(1)} m³ consumidos · ${areaM2.toFixed(0)} m² de cultivo`,
+      criterio:
+        estadoAgua === "verde"
+          ? `Óptimo: ≤ ${umbralOptimo} m³ para ${areaM2.toFixed(0)} m²`
+          : estadoAgua === "amarillo"
+            ? `Alto: óptimo ≤ ${umbralOptimo} m³ para ${areaM2.toFixed(0)} m²`
+            : `Excesivo: óptimo ≤ ${umbralOptimo} m³ para ${areaM2.toFixed(0)} m²`,
+      estado: estadoAgua,
+    },
+    {
+      icon: "ban",
+      titulo: "Sin agroquímicos",
+      valor: "Ningún agroquímico aplicado en toda la campaña",
+      criterio: "Óptimo: 0 agroquímicos",
+      estado: "verde",
+    },
+    {
+      icon: "leaf",
+      titulo: "Control biológico",
+      valor:
+        ctrlBio >= 1
+          ? `${ctrlBio} ${ctrlBio === 1 ? "aplicación" : "aplicaciones"} · manejo preventivo de plagas`
+          : "Sin control biológico registrado",
+      criterio: ctrlBio >= 1 ? "Óptimo: al menos 1 acción preventiva" : "Pendiente: incorporar control biológico",
+      estado: ctrlBio >= 1 ? "verde" : "amarillo",
+    },
+  ];
+}
+
+const SEMAFORO_SCORE = { verde: 2, amarillo: 1, rojo: 0 };
+const SEMAFORO_LABEL = { verde: "Sostenible", amarillo: "En observación", rojo: "Requiere atención" };
+
+/* Promedia el semáforo de todas las prácticas de todos los cultivos */
+function semaforoPromedio(cultivos) {
+  const estados = cultivos.flatMap((c) => buildSemaforoRows(c).map((r) => r.estado));
+  if (estados.length === 0) return { estado: "amarillo", huella: 0 };
+  const avg = estados.reduce((a, e) => a + SEMAFORO_SCORE[e], 0) / estados.length;
+  const estado = avg >= 1.5 ? "verde" : avg >= 0.75 ? "amarillo" : "rojo";
+  const huella = cultivos.reduce((a, c) => a + (c.huella_neta_kg_co2 || 0), 0);
+  return { estado, huella };
+}
+
+function SemaforoAmbiental({ cultivos }) {
+  const lista = cultivos || [];
+  const [sel, setSel] = useState(lista[0]?.cultivo_id || "");
+
+  if (lista.length === 0) {
+    return (
+      <Card pad="p-[26px]">
+        <h3 className="m-0 text-[19px] font-extrabold text-text">Sostenibilidad ambiental por práctica</h3>
+        <p className="mb-4 mt-1 text-[13.5px] text-muted-2">Semáforo ambiental por cultivo</p>
+        <EmptyState icon="leaf" title="Sin datos ambientales" desc="Registra prácticas y huella de carbono en tus cultivos para ver el semáforo." />
+      </Card>
+    );
+  }
+
+  const cultivo = lista.find((c) => c.cultivo_id === sel) || lista[0];
+  const rows = buildSemaforoRows(cultivo);
+  const enOptimo = rows.filter((r) => r.estado === "verde").length;
+  const sostenible = enOptimo >= 3;
+
+  const prom = semaforoPromedio(lista);
+  const promColor = SEMAFORO_COLORS[prom.estado];
+  const promHuellaTxt = `${prom.huella <= 0 ? "−" : "+"}${Math.abs(prom.huella).toFixed(1)} kg CO₂`;
+
+  return (
+    <Card pad="p-[26px]" className="flex flex-col">
+      <div className="mb-1 flex items-start justify-between gap-3">
+        <h3 className="m-0 text-[19px] font-extrabold text-text">Sostenibilidad ambiental por práctica</h3>
+        <span
+          className="flex flex-shrink-0 items-center gap-[6px] rounded-full px-[11px] py-[5px] text-[12.5px] font-extrabold"
+          style={
+            sostenible
+              ? { background: "#dcefd7", color: "#2f6b34" }
+              : { background: "#fbf0c9", color: "#8a6b16" }
+          }
+        >
+          <span className="h-[7px] w-[7px] rounded-full" style={{ background: sostenible ? "#3f9a48" : "#e2b53a" }} />
+          {sostenible ? "Sostenible" : "En observación"}
+        </span>
+      </div>
+
+      {/* Filtro por cultivo */}
+      <div className="mb-1 mt-[10px] flex items-center gap-[10px]">
+        <span className="whitespace-nowrap text-[13px] font-bold text-muted-2">Cultivo</span>
+        <Select value={cultivo.cultivo_id} onChange={(e) => setSel(e.target.value)} className="flex-1">
+          {lista.map((c) => (
+            <option key={c.cultivo_id} value={c.cultivo_id}>
+              {c.especie}
+              {c.biohuerto ? ` · ${c.biohuerto}` : ""}
+            </option>
+          ))}
+        </Select>
+      </div>
+
+      <div className="mt-1 flex-1">
+        {rows.map((r) => (
+          <PracticaRow key={r.titulo} {...r} />
+        ))}
+      </div>
+
+      {/* Semáforo ambiental promedio del biohuerto */}
+      <div className="mt-[10px] flex items-center gap-4 rounded-[14px] border border-line bg-chip-2 px-[16px] py-[14px]">
+        <MiniSemaforo estado={prom.estado} />
+        <div className="min-w-0">
+          <div className="text-[11.5px] font-extrabold uppercase tracking-[.05em] text-muted-2">Semáforo ambiental promedio</div>
+          <div className="text-[16px] font-extrabold leading-tight" style={{ color: promColor }}>
+            {SEMAFORO_LABEL[prom.estado]}
+          </div>
+          <div className="mt-[2px] text-[12.5px] font-semibold text-muted-1">
+            Promedio de {lista.length} {lista.length === 1 ? "cultivo" : "cultivos"} · Huella neta {promHuellaTxt}
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -446,51 +588,112 @@ function ReporteContenido({ r }) {
   );
 }
 
-/* ---- Genera y abre el reporte para imprimir / guardar como PDF ---- */
+/* ---- Genera y DESCARGA el reporte como PDF (directo, sin diálogo) ---- */
 function descargarReporte(r, toast) {
   const { data } = r;
   const fecha = new Date().toLocaleDateString("es-PE", { day: "2-digit", month: "long", year: "numeric" });
-  const fila = (l, v) => `<tr><td>${l}</td><td class="v">${v}</td></tr>`;
-  const seccion = (titulo, filas) => `<h2>${titulo}</h2><table>${filas}</table>`;
-  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Reporte resumido — Biohuerto</title>
-<style>
-  *{box-sizing:border-box} body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1c2a20;margin:0;padding:48px;max-width:760px}
-  .head{display:flex;align-items:center;gap:14px;border-bottom:3px solid #2f7a3a;padding-bottom:18px;margin-bottom:8px}
-  .logo{width:46px;height:46px;border-radius:12px;background:#2f7a3a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800}
-  h1{font-size:24px;margin:0;color:#2f7a3a} .sub{color:#6b756c;font-size:13px;margin-top:24px}
-  h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#2f7a3a;margin:26px 0 8px}
-  table{width:100%;border-collapse:collapse} td{padding:8px 0;border-bottom:1px solid #e6ebe5;font-size:14px}
-  td.v{text-align:right;font-weight:800} .total td{border-top:2px solid #cfe8cd;font-weight:800}
-  .foot{margin-top:34px;color:#9aa39a;font-size:12px;text-align:center}
-  @media print{body{padding:24px}}
-</style></head><body>
-  <div class="head"><div class="logo">🌱</div><div><h1>Reporte resumido del biohuerto</h1><div style="color:#6b756c;font-size:13px">Gestión sostenible · Campaña actual</div></div></div>
-  <div class="sub">Generado el ${fecha}</div>
-  ${seccion("Producción", fila("Cultivos activos", r.totalCultivos) + r.porEtapa.filter((e) => e.n > 0).map((e) => fila("· " + ((ETAPAS[e.etapa] || {}).label || e.etapa), e.n + " cultivo" + (e.n === 1 ? "" : "s"))).join(""))}
-  ${seccion("Próximas cosechas", data.proximas_cosechas.map((c) => fila(c.especie + " · " + c.biohuerto, fmtFecha(c.fecha_estimada_cosecha))).join(""))}
-  ${seccion("Costos acumulados", r.costBars.map((c) => fila(c.label, fmtMoneda(c.value))).join("") + `<tr class="total"><td>Total invertido</td><td class="v">${fmtMoneda(data.costo_total)}</td></tr>`)}
-  ${seccion("Alertas pendientes", fila("Prioridad alta", data.alertas_pendientes.alta) + fila("Prioridad media", data.alertas_pendientes.media) + fila("Prioridad baja", data.alertas_pendientes.baja))}
-  ${seccion("Sostenibilidad", fila("Índice de prácticas sostenibles", data.sostenibilidad.score + "%") + fila("Prácticas sostenibles", data.sostenibilidad.sostenibles + " de " + data.sostenibilidad.total) + fila("Huella de carbono", (data.huella_total_kg_co2 / 1000).toFixed(2) + " t CO₂e") + fila("Compost aplicado", data.compost_kg.toFixed(0) + " kg") + fila("Costo de agua acumulado", fmtMoneda(data.costo_agua)))}
-  <div class="foot">Biohuerto — Plataforma de gestión sostenible · Documento generado automáticamente</div>
-</body></html>`;
 
-  const w = window.open("", "_blank");
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => {
-      w.focus();
-      w.print();
-    }, 350);
-    toast && toast("Abriendo reporte para guardar como PDF…");
-  } else {
-    const blob = new Blob([html], { type: "text/html" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "Reporte-Biohuerto.html";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    toast && toast("Reporte descargado");
-  }
+  const GREEN = [47, 122, 58];
+  const GRAY = [107, 117, 108];
+  const LINE = [230, 235, 229];
+  const TEXT = [28, 42, 32];
+  const MUTE = [154, 163, 154];
+
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const M = 48;
+  let y = M;
+  const ensure = (h) => {
+    if (y + h > pageH - M) {
+      doc.addPage();
+      y = M;
+    }
+  };
+
+  // Cabecera
+  doc.setFillColor(...GREEN);
+  doc.roundedRect(M, y, 34, 34, 8, 8, "F");
+  doc.setTextColor(...GREEN);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.text("Reporte resumido del biohuerto", M + 46, y + 15);
+  doc.setTextColor(...GRAY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text("Gestion sostenible · Campana actual", M + 46, y + 30);
+  y += 34 + 14;
+  doc.setDrawColor(...GREEN);
+  doc.setLineWidth(2);
+  doc.line(M, y, pageW - M, y);
+  y += 16;
+  doc.setTextColor(...GRAY);
+  doc.setFontSize(9.5);
+  doc.text(`Generado el ${fecha}`, M, y);
+  y += 22;
+
+  const seccion = (titulo, filas) => {
+    if (filas.length === 0) return;
+    ensure(46);
+    doc.setTextColor(...GREEN);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(titulo.toUpperCase(), M, y);
+    y += 12;
+    filas.forEach(([l, v]) => {
+      ensure(24);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      doc.setTextColor(...TEXT);
+      doc.text(String(l), M, y);
+      doc.setFont("helvetica", "bold");
+      doc.text(String(v), pageW - M, y, { align: "right" });
+      y += 8;
+      doc.setDrawColor(...LINE);
+      doc.setLineWidth(1);
+      doc.line(M, y, pageW - M, y);
+      y += 13;
+    });
+    y += 12;
+  };
+
+  seccion("Produccion", [
+    ["Cultivos activos", r.totalCultivos],
+    ...r.porEtapa
+      .filter((e) => e.n > 0)
+      .map((e) => ["· " + ((ETAPAS[e.etapa] || {}).label || e.etapa), e.n + " cultivo" + (e.n === 1 ? "" : "s")]),
+  ]);
+  seccion(
+    "Proximas cosechas",
+    data.proximas_cosechas.map((c) => [c.especie + " · " + c.biohuerto, fmtFecha(c.fecha_estimada_cosecha)]),
+  );
+  seccion("Costos acumulados", [
+    ...r.costBars.map((c) => [c.label, fmtMoneda(c.value)]),
+    ["Total invertido", fmtMoneda(data.costo_total)],
+  ]);
+  seccion("Alertas pendientes", [
+    ["Prioridad alta", data.alertas_pendientes.alta],
+    ["Prioridad media", data.alertas_pendientes.media],
+    ["Prioridad baja", data.alertas_pendientes.baja],
+  ]);
+  seccion("Sostenibilidad", [
+    ["Indice de practicas sostenibles", data.sostenibilidad.score + "%"],
+    ["Practicas sostenibles", data.sostenibilidad.sostenibles + " de " + data.sostenibilidad.total],
+    ["Huella de carbono", (data.huella_total_kg_co2 / 1000).toFixed(2) + " t CO2e"],
+    ["Compost aplicado", data.compost_kg.toFixed(0) + " kg"],
+    ["Costo de agua acumulado", fmtMoneda(data.costo_agua)],
+  ]);
+
+  doc.setTextColor(...MUTE);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text(
+    "Biohuerto — Plataforma de gestion sostenible · Documento generado automaticamente",
+    pageW / 2,
+    pageH - 28,
+    { align: "center" },
+  );
+
+  doc.save(`Reporte-Biohuerto-${new Date().toISOString().slice(0, 10)}.pdf`);
+  toast && toast("Reporte PDF descargado");
 }

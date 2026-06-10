@@ -108,10 +108,17 @@ async def update_cuidado(
     current_user: CurrentUser = Depends(require_role("productor", "admin")),
     session: AsyncSession = Depends(get_session),
 ) -> CuidadoOut:
-    await _get_one(session, cuidado_id, current_user)
+    current = await _get_one(session, cuidado_id, current_user)
     values = payload.model_dump(exclude_unset=True)
     if not values:
-        return await _get_one(session, cuidado_id, current_user)
+        return current
+    # Un cuidado dado de baja / pausado (activo = false) no se puede editar: solo
+    # se admite el cambio que lo reactiva (activo = true).
+    if not current.activo and values.get("activo") is not True:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede editar un cuidado dado de baja. Reactívalo primero.",
+        )
 
     params: dict = {"id": cuidado_id}
     clauses: list[str] = ["updated_at = now()"]
