@@ -18,9 +18,11 @@ class CultivoCreate(BaseModel):
     fecha_siembra: date
     fecha_estimada_cosecha: date | None = None
     cantidad: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
-    area_m2: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    unidad_cantidad: str = Field(default="und", max_length=20)
+    area_m2: Decimal | None = Field(default=None, gt=0, max_digits=10, decimal_places=2)
     campania: str | None = Field(default=None, max_length=120)
     notas: str | None = Field(default=None, max_length=1000)
+    imagen: str | None = None  # data URL (data:image/...;base64,...) opcional
 
     @field_validator("especie", "variedad", "campania", "notas", mode="before")
     @classmethod
@@ -35,15 +37,19 @@ class CultivoCreate(BaseModel):
 
 
 class CultivoUpdate(BaseModel):
+    biohuerto_id: int | None = None
     especie: str | None = Field(default=None, min_length=2, max_length=120)
     variedad: str | None = Field(default=None, max_length=120)
     etapa: EtapaCultivo | None = None
     fecha_siembra: date | None = None
     fecha_estimada_cosecha: date | None = None
     cantidad: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
-    area_m2: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
+    unidad_cantidad: str | None = Field(default=None, max_length=20)
+    area_m2: Decimal | None = Field(default=None, gt=0, max_digits=10, decimal_places=2)
     campania: str | None = Field(default=None, max_length=120)
     notas: str | None = Field(default=None, max_length=1000)
+    is_active: bool | None = None
+    imagen: str | None = None  # data URL nuevo, "" / null para quitar la imagen
 
     @field_validator("especie", "variedad", "campania", "notas", mode="before")
     @classmethod
@@ -54,17 +60,21 @@ class CultivoUpdate(BaseModel):
 class CultivoOut(BaseModel):
     id: UUID
     biohuerto_id: int | None
-    user_id: int | None
+    biohuerto_nombre: str | None = None
+    usuario_id: int | None = None
     especie: str
-    variedad: str | None
+    variedad: str | None = None
     etapa: EtapaCultivo
+    etapa_nombre: str | None = None
     fecha_siembra: date
-    fecha_estimada_cosecha: date | None
-    cantidad: Decimal | None
-    area_m2: Decimal | None
-    campania: str | None
-    notas: str | None
-    is_synced: bool
+    fecha_estimada_cosecha: date | None = None
+    cantidad: Decimal | None = None
+    unidad_cantidad: str = "und"
+    area_m2: Decimal | None = None
+    campania: str | None = None
+    notas: str | None = None
+    is_active: bool = True
+    imagen: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -73,7 +83,4 @@ class CultivoOut(BaseModel):
 
 class CultivoHistorial(BaseModel):
     cultivo: CultivoOut
-    monitoreos: list[dict]
-    alertas: list[dict]
-    cosechas: list[dict]
-
+    historial: list[dict]

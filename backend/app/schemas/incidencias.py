@@ -11,15 +11,28 @@ EstadoIncidencia = Literal["abierta", "en_revision", "cerrada"]
 
 
 class IncidenciaCreate(BaseModel):
-    biohuerto_id: int
-    cultivo_id: UUID | None = None
+    cultivo_id: UUID
     tipo: str = Field(min_length=2, max_length=80)
     descripcion: str = Field(min_length=2, max_length=1000)
     severidad: SeveridadIncidencia = "media"
+    zona_afectada: str | None = Field(default=None, max_length=120)
     estado: EstadoIncidencia = "abierta"
     reportado_en: datetime | None = None
 
-    @field_validator("tipo", "descripcion", mode="before")
+    @field_validator("tipo", "descripcion", "zona_afectada", mode="before")
+    @classmethod
+    def sanitize_text(cls, value: str | None) -> str | None:
+        return clean_text(value)
+
+
+class IncidenciaUpdate(BaseModel):
+    tipo: str | None = Field(default=None, min_length=2, max_length=80)
+    descripcion: str | None = Field(default=None, min_length=2, max_length=1000)
+    severidad: SeveridadIncidencia | None = None
+    zona_afectada: str | None = Field(default=None, max_length=120)
+    estado: EstadoIncidencia | None = None
+
+    @field_validator("tipo", "descripcion", "zona_afectada", mode="before")
     @classmethod
     def sanitize_text(cls, value: str | None) -> str | None:
         return clean_text(value)
@@ -27,17 +40,12 @@ class IncidenciaCreate(BaseModel):
 
 class IncidenciaOut(BaseModel):
     id: UUID
-    biohuerto_id: int | None
-    cultivo_id: UUID | None
-    user_id: int | None
+    cultivo_id: UUID
     tipo: str
     descripcion: str
     severidad: SeveridadIncidencia
+    zona_afectada: str | None = None
     estado: EstadoIncidencia
     reportado_en: datetime
-    is_synced: bool
-    created_at: datetime
-    updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
-

@@ -31,10 +31,11 @@ async def get_current_user(
     result = await session.execute(
         text(
             """
-            select id, email, nombre, rol, is_active
-            from users
-            where id = :user_id
-              and deleted_at is null
+            select u.id, u.email, u.nombre, r.codigo as rol, u.is_active
+            from usuarios u
+            join roles r on r.id = u.rol_id
+            where u.id = :user_id
+              and u.deleted_at is null
             """
         ),
         {"user_id": user_id},

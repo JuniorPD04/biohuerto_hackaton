@@ -1,0 +1,5 @@
+# Forzar fin de línea LF en scripts que corren dentro de contenedores Linux.
+# Evita el error "env: can't execute 'sh'" por CRLF de Windows en los
+# scripts de /docker-entrypoint-initdb.d.
+*.sh   text eol=lf
+*.sql  text eol=lf

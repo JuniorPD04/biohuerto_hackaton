@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     openai_model_text: str | None = Field(default=None, alias="OPENAI_MODEL_TEXT")
     openai_model_vision: str | None = Field(default=None, alias="OPENAI_MODEL_VISION")
     fernet_key: str | None = Field(default=None, alias="FERNET_KEY")
+    ollama_url: str = Field(default="http://ollama:11434", alias="OLLAMA_URL")
+    ollama_llm_model: str = Field(default="llama3.2", alias="OLLAMA_LLM_MODEL")
+    ollama_embed_model: str = Field(default="nomic-embed-text", alias="OLLAMA_EMBED_MODEL")
+    # Clave simetrica de pgcrypto para cifrar/descifrar campos sensibles
+    # (telefono/direccion) en SQL con pgp_sym_encrypt/pgp_sym_decrypt.
+    # Debe coincidir con la usada en el seed (backend/seed.sql).
+    pgcrypto_key: str = Field(default="bkey", alias="PGCRYPTO_KEY")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

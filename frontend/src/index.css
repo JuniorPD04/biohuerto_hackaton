@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f3f6f1;
+  --sidebar: #f7faf5;
+  --surface: #ffffff;
+  --primary: #1b4d2e;
+  --accent-700: #1f7a3d;
+  --accent-800: #1c5a30;
+  --accent-50: #eaf3e7;
+  --accent-100: #d6e8d0;
+  --terracotta: #9a4a39;
+  --text: #1b271f;
+  --muted-1: #46514a;
+  --muted-2: #6e786f;
+  --muted-3: #9aa39a;
+  --line: #e4eae0;
+  --line-2: #cdd6c9;
+  --chip: #eef2ec;
+  --chip-2: #f1f5ef;
+  --chip-3: #f6f9f4;
+  --mono: "JetBrains Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+body {
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(31, 122, 61, 0.2);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4ddce;
+  border-radius: 99px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c0cbb9;
+}
+
+input,
+textarea,
+select,
+button {
+  font-family: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  text-wrap: pretty;
+}

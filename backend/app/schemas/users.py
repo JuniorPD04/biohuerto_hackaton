@@ -38,6 +38,18 @@ class UserUpdate(BaseModel):
         return clean_text(value)
 
 
+class UserAdminUpdate(BaseModel):
+    is_active: bool | None = None
+    nombre: str | None = Field(default=None, min_length=2, max_length=160)
+    telefono: str | None = Field(default=None, max_length=40)
+    direccion: str | None = Field(default=None, max_length=240)
+
+    @field_validator("nombre", "telefono", "direccion", mode="before")
+    @classmethod
+    def sanitize_text(cls, value: str | None) -> str | None:
+        return clean_text(value)
+
+
 class UserOut(BaseModel):
     id: int
     email: EmailStr

@@ -10,6 +10,7 @@ htmlcov/
 node_modules/
 dist/
 build/
-backups/*.sql
+backups/
 *.log
+*.bak
 
