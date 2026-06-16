@@ -8,35 +8,33 @@ from app.schemas.common import clean_text
 
 
 class MonitoreoCreate(BaseModel):
-    biohuerto_id: int
-    cultivo_id: UUID | None = None
-    humedad_porcentaje: Decimal | None = Field(default=None, ge=0, le=100, max_digits=5, decimal_places=2)
+    cultivo_id: UUID
+    humedad_pct: Decimal | None = Field(default=None, ge=0, le=100, max_digits=5, decimal_places=2)
     temperatura_c: Decimal | None = Field(default=None, ge=-10, le=60, max_digits=5, decimal_places=2)
     luminosidad_lux: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
-    incidencia: str | None = Field(default=None, max_length=500)
+    ph_suelo: Decimal | None = Field(default=None, ge=0, le=14, max_digits=4, decimal_places=2)
     observacion: str | None = Field(default=None, max_length=1000)
-    registrado_en: datetime | None = None
 
-    @field_validator("incidencia", "observacion", mode="before")
+    @field_validator("observacion", mode="before")
     @classmethod
     def sanitize_text(cls, value: str | None) -> str | None:
         return clean_text(value)
 
 
 class MonitoreoOut(BaseModel):
-    id: UUID
-    biohuerto_id: int | None
-    cultivo_id: UUID | None
-    user_id: int | None
-    humedad_porcentaje: Decimal | None
-    temperatura_c: Decimal | None
-    luminosidad_lux: Decimal | None
-    incidencia: str | None
-    observacion: str | None
+    id: str
+    cultivo_id: str
+    fuente: str
+    sensor_codigo: str | None = None
     registrado_en: datetime
-    is_synced: bool
-    created_at: datetime
-    updated_at: datetime
+    humedad_pct: Decimal | None = None
+    temperatura_c: Decimal | None = None
+    luminosidad_lux: Decimal | None = None
+    ph_suelo: Decimal | None = None
+    observacion: str | None = None
+    luminosidad_nivel: str | None = None
+    cultivo: str | None = None
+    biohuerto: str | None = None
+    biohuerto_id: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
-

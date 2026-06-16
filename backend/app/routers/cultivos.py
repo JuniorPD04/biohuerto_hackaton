@@ -9,8 +9,29 @@ from app.dependencies import get_current_user, require_role
 from app.routers.biohuertos import _ensure_biohuerto_access
 from app.schemas.cultivos import CultivoCreate, CultivoHistorial, CultivoOut, CultivoUpdate
 from app.schemas.users import CurrentUser
+from app.services.attachments import set_principal_image
 
 router = APIRouter(prefix="/api/cultivos", tags=["cultivos"])
+
+_CULTIVO_SELECT = """
+    select c.id::text, c.biohuerto_id::text, b.nombre as biohuerto_nombre, c.usuario_id,
+           e.nombre as especie, c.especie_id, c.variedad,
+           ef.codigo as etapa, ef.nombre as etapa_nombre,
+           c.fecha_siembra, c.fecha_estimada_cosecha, c.cantidad,
+           un.codigo as unidad, c.unidad_id,
+           c.area_m2, cmp.nombre as campania, c.notas, c.is_active,
+           (select 'data:' || a.mime_type || ';base64,' || replace(encode(a.datos, 'base64'), E'\n', '')
+              from archivos_adjuntos a
+             where a.cultivo_id = c.id and a.es_principal
+             order by a.created_at desc limit 1) as imagen,
+           c.created_at, c.updated_at
+    from cultivos c
+    join etapas_fenologicas ef on ef.id = c.etapa_id
+    join especies e on e.id = c.especie_id
+    left join unidades un on un.id = c.unidad_id
+    left join biohuertos b on b.id = c.biohuerto_id
+    left join campanias cmp on cmp.id = c.campania_id
+"""
 
 
 def _to_cultivo_out(row) -> CultivoOut:
@@ -19,60 +40,79 @@ def _to_cultivo_out(row) -> CultivoOut:
 
 async def _fetch_cultivo_row(session: AsyncSession, cultivo_id: UUID):
     result = await session.execute(
-        text(
-            """
-            select id, biohuerto_id, user_id, especie, variedad, etapa, fecha_siembra,
-                   fecha_estimada_cosecha, cantidad, area_m2, campania, notas,
-                   is_synced, created_at, updated_at
-            from cultivos
-            where id = :id
-              and deleted_at is null
-            """
-        ),
+        text(_CULTIVO_SELECT + " where c.id = :id and c.deleted_at is null"),
         {"id": cultivo_id},
     )
     return result.mappings().first()
 
 
-async def _ensure_cultivo_access(
-    session: AsyncSession,
-    cultivo_id: UUID,
-    current_user: CurrentUser,
-):
+async def _ensure_cultivo_access(session: AsyncSession, cultivo_id: UUID, current_user: CurrentUser):
     row = await _fetch_cultivo_row(session, cultivo_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cultivo no encontrado")
-    if current_user.rol != "admin" and row["user_id"] != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes acceder a este cultivo")
     return row
+
+
+async def _ensure_cosecha_for_cultivo(session: AsyncSession, cultivo_id: UUID) -> None:
+    """Al pasar un cultivo a etapa 'cosecha', lo agrega a Gestión de Cosechas.
+
+    Crea una cosecha 'disponible' asociada al cultivo y su productor, sin duplicar
+    si ya existe una para ese cultivo. El precio queda en 0 para que el productor
+    lo complete luego. No hace commit: el llamador controla la transacción.
+    """
+    row = await _fetch_cultivo_row(session, cultivo_id)
+    if row is None or row["usuario_id"] is None:
+        return
+
+    existing = await session.execute(
+        text("select 1 from cosechas where cultivo_id = :id and deleted_at is null limit 1"),
+        {"id": cultivo_id},
+    )
+    if existing.first() is not None:
+        return
+
+    nombre = " ".join(p for p in [row["especie"], row["variedad"]] if p) or row["especie"]
+    await session.execute(
+        text(
+            """
+            insert into cosechas
+                (cultivo_id, usuario_id, nombre_producto, cantidad, unidad_id,
+                 precio_referencial, fecha_cosecha, estado)
+            values
+                (:cultivo_id, :usuario_id, :nombre, :cantidad,
+                 coalesce(:unidad_id, (select id from unidades where codigo = 'und')),
+                 0, coalesce(:fecha, current_date), 'disponible')
+            """
+        ),
+        {
+            "cultivo_id": cultivo_id,
+            "usuario_id": row["usuario_id"],
+            "nombre": nombre,
+            "cantidad": row["cantidad"] if row["cantidad"] is not None else 0,
+            "unidad_id": row["unidad_id"],
+            "fecha": row["fecha_estimada_cosecha"],
+        },
+    )
 
 
 @router.get("", response_model=list[CultivoOut])
 async def list_cultivos(
-    biohuerto_id: int | None = None,
+    biohuerto_id: str | None = None,
+    etapa: str | None = None,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[CultivoOut]:
     params: dict = {}
-    filters = ["deleted_at is null"]
-    if current_user.rol != "admin":
-        filters.append("user_id = :user_id")
-        params["user_id"] = current_user.id
+    filters = ["c.deleted_at is null"]
     if biohuerto_id is not None:
-        filters.append("biohuerto_id = :biohuerto_id")
+        filters.append("c.biohuerto_id = :biohuerto_id")
         params["biohuerto_id"] = biohuerto_id
+    if etapa is not None:
+        filters.append("ef.codigo = :etapa")
+        params["etapa"] = etapa
 
     result = await session.execute(
-        text(
-            f"""
-            select id, biohuerto_id, user_id, especie, variedad, etapa, fecha_siembra,
-                   fecha_estimada_cosecha, cantidad, area_m2, campania, notas,
-                   is_synced, created_at, updated_at
-            from cultivos
-            where {" and ".join(filters)}
-            order by created_at desc
-            """
-        ),
+        text(_CULTIVO_SELECT + " where " + " and ".join(filters) + " order by c.created_at desc"),
         params,
     )
     return [_to_cultivo_out(row) for row in result.mappings().all()]
@@ -89,34 +129,43 @@ async def create_cultivo(
         text(
             """
             insert into cultivos (
-              biohuerto_id, user_id, especie, variedad, etapa, fecha_siembra,
-              fecha_estimada_cosecha, cantidad, area_m2, campania, notas
+              biohuerto_id, usuario_id, etapa_id, campania_id, especie_id, variedad,
+              fecha_siembra, fecha_estimada_cosecha, cantidad, unidad_id, area_m2, notas
             )
             values (
-              :biohuerto_id, :user_id, :especie, :variedad, :etapa, :fecha_siembra,
-              :fecha_estimada_cosecha, :cantidad, :area_m2, :campania, :notas
+              :biohuerto_id, :usuario_id,
+              (select id from etapas_fenologicas where codigo = :etapa),
+              (select id from campanias where nombre = :campania),
+              :especie_id, :variedad, :fecha_siembra, :fecha_estimada_cosecha,
+              :cantidad,
+              coalesce(:unidad_id, (select id from unidades where codigo = 'und')),
+              :area_m2, :notas
             )
-            returning id, biohuerto_id, user_id, especie, variedad, etapa, fecha_siembra,
-                      fecha_estimada_cosecha, cantidad, area_m2, campania, notas,
-                      is_synced, created_at, updated_at
+            returning id
             """
         ),
         {
             "biohuerto_id": payload.biohuerto_id,
-            "user_id": current_user.id,
-            "especie": payload.especie,
-            "variedad": payload.variedad,
+            "usuario_id": current_user.id,
             "etapa": payload.etapa,
+            "campania": payload.campania,
+            "especie_id": payload.especie_id,
+            "variedad": payload.variedad,
             "fecha_siembra": payload.fecha_siembra,
             "fecha_estimada_cosecha": payload.fecha_estimada_cosecha,
             "cantidad": payload.cantidad,
+            "unidad_id": payload.unidad_id,
             "area_m2": payload.area_m2,
-            "campania": payload.campania,
             "notas": payload.notas,
         },
     )
+    new_id = result.scalar_one()
+    await set_principal_image(session, column="cultivo_id", entity_id=new_id, data_url=payload.imagen)
+    if payload.etapa == "cosecha":
+        await _ensure_cosecha_for_cultivo(session, new_id)
     await session.commit()
-    return _to_cultivo_out(result.mappings().one())
+    row = await _fetch_cultivo_row(session, new_id)
+    return _to_cultivo_out(row)
 
 
 @router.get("/{cultivo_id}", response_model=CultivoOut)
@@ -136,46 +185,57 @@ async def update_cultivo(
     current_user: CurrentUser = Depends(require_role("productor", "admin")),
     session: AsyncSession = Depends(get_session),
 ) -> CultivoOut:
-    await _ensure_cultivo_access(session, cultivo_id, current_user)
+    current = await _ensure_cultivo_access(session, cultivo_id, current_user)
     values = payload.model_dump(exclude_unset=True)
     if not values:
         row = await _fetch_cultivo_row(session, cultivo_id)
         return _to_cultivo_out(row)
+    # Un cultivo dado de baja (is_active = false) no se puede editar: solo se
+    # admite el cambio que lo reactiva (is_active = true).
+    if not current["is_active"] and values.get("is_active") is not True:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede editar un cultivo dado de baja. Reactívalo primero.",
+        )
 
     params: dict = {"id": cultivo_id}
     clauses: list[str] = []
-    allowed_fields = {
-        "especie",
+    simple_fields = {
+        "biohuerto_id",
+        "especie_id",
         "variedad",
-        "etapa",
         "fecha_siembra",
         "fecha_estimada_cosecha",
         "cantidad",
+        "unidad_id",
         "area_m2",
-        "campania",
         "notas",
+        "is_active",
     }
-    for field in allowed_fields:
+    for field in simple_fields:
         if field in values:
             params[field] = values[field]
             clauses.append(f"{field} = :{field}")
+    if "etapa" in values:
+        params["etapa"] = values["etapa"]
+        clauses.append("etapa_id = (select id from etapas_fenologicas where codigo = :etapa)")
+    if "campania" in values:
+        params["campania"] = values["campania"]
+        clauses.append("campania_id = (select id from campanias where nombre = :campania)")
 
-    result = await session.execute(
-        text(
-            f"""
-            update cultivos
-            set {", ".join(clauses)}
-            where id = :id
-              and deleted_at is null
-            returning id, biohuerto_id, user_id, especie, variedad, etapa, fecha_siembra,
-                      fecha_estimada_cosecha, cantidad, area_m2, campania, notas,
-                      is_synced, created_at, updated_at
-            """
-        ),
-        params,
-    )
+    if clauses:
+        await session.execute(
+            text(f"update cultivos set {', '.join(clauses)} where id = :id and deleted_at is null"),
+            params,
+        )
+    if "imagen" in values:
+        await set_principal_image(
+            session, column="cultivo_id", entity_id=cultivo_id, data_url=values["imagen"]
+        )
+    if values.get("etapa") == "cosecha":
+        await _ensure_cosecha_for_cultivo(session, cultivo_id)
     await session.commit()
-    row = result.mappings().first()
+    row = await _fetch_cultivo_row(session, cultivo_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cultivo no encontrado")
     return _to_cultivo_out(row)
@@ -203,52 +263,20 @@ async def get_cultivo_historial(
     session: AsyncSession = Depends(get_session),
 ) -> CultivoHistorial:
     cultivo_row = await _ensure_cultivo_access(session, cultivo_id, current_user)
-
-    monitoreos = await session.execute(
+    historial = await session.execute(
         text(
             """
-            select id::text, humedad_porcentaje, temperatura_c, luminosidad_lux,
-                   incidencia, observacion, registrado_en
-            from monitoreo_registros
-            where cultivo_id = :cultivo_id
-              and deleted_at is null
-            order by registrado_en desc
-            limit 20
+            select h.id, ef.codigo as etapa, ef.nombre as etapa_nombre,
+                   h.fecha, h.titulo, h.observacion
+            from cultivos_historial_etapas h
+            join etapas_fenologicas ef on ef.id = h.etapa_id
+            where h.cultivo_id = :cultivo_id
+            order by h.fecha desc, h.id desc
             """
         ),
         {"cultivo_id": cultivo_id},
     )
-    alertas = await session.execute(
-        text(
-            """
-            select id, titulo, tipo, prioridad, estado, fecha_programada
-            from alertas
-            where cultivo_id = :cultivo_id
-              and deleted_at is null
-            order by fecha_programada asc
-            limit 20
-            """
-        ),
-        {"cultivo_id": cultivo_id},
-    )
-    cosechas = await session.execute(
-        text(
-            """
-            select id::text, nombre_producto, cantidad, unidad, precio_referencial, fecha_cosecha, disponible
-            from cosechas
-            where cultivo_id = :cultivo_id
-              and deleted_at is null
-            order by fecha_cosecha desc
-            limit 20
-            """
-        ),
-        {"cultivo_id": cultivo_id},
-    )
-
     return CultivoHistorial(
         cultivo=_to_cultivo_out(cultivo_row),
-        monitoreos=[dict(row) for row in monitoreos.mappings().all()],
-        alertas=[dict(row) for row in alertas.mappings().all()],
-        cosechas=[dict(row) for row in cosechas.mappings().all()],
+        historial=[dict(row) for row in historial.mappings().all()],
     )
-

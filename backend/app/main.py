@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -9,23 +10,29 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database import get_session, ping_database
+from app.database import AsyncSessionLocal, get_session, ping_database
 from app.rate_limit import limiter
 from app.routers import (
+    acceso,
     alertas,
     auth,
     biohuertos,
+    campanias,
+    catalogos,
+    cosechas,
+    cuidados,
     cultivos,
     dashboard,
+    entidades,
     diagnostico,
     incidencias,
     monitoreo,
+    rag,
     recomendaciones,
-    reportes,
-    sync,
     trazabilidad,
     users,
 )
+from app.services.rag import ensure_ingested
 
 settings = get_settings()
 
@@ -52,13 +59,23 @@ app.include_router(biohuertos.router)
 app.include_router(cultivos.router)
 app.include_router(monitoreo.router)
 app.include_router(incidencias.router)
+app.include_router(cuidados.router)
 app.include_router(alertas.router)
 app.include_router(trazabilidad.router)
 app.include_router(diagnostico.router)
+app.include_router(rag.router)
 app.include_router(recomendaciones.router)
-app.include_router(sync.router)
+app.include_router(cosechas.router)
 app.include_router(dashboard.router)
-app.include_router(reportes.router)
+app.include_router(campanias.router)
+app.include_router(catalogos.router)
+app.include_router(acceso.router)
+app.include_router(entidades.router)
+
+
+@app.on_event("startup")
+async def _start_rag_ingestion() -> None:
+    asyncio.create_task(ensure_ingested(AsyncSessionLocal))
 
 
 @app.middleware("http")
@@ -81,7 +98,7 @@ async def health() -> dict[str, str]:
     }
 
 
-@app.get("/api/cosechas/public", tags=["public"])
+@app.get("/api/public/cosechas", tags=["public"])
 async def public_harvest_catalog(
     session: AsyncSession = Depends(get_session),
 ) -> list[dict[str, Any]]:
@@ -91,18 +108,19 @@ async def public_harvest_catalog(
             c.id::text,
             c.nombre_producto,
             c.cantidad,
-            c.unidad,
+            un.codigo as unidad,
             c.precio_referencial,
             c.fecha_cosecha,
-            c.foto_url,
-            c.contacto_publico,
+            e.nombre as cultivo,
             b.nombre as biohuerto,
             b.area_m2
         from cosechas c
-        join biohuertos b on b.id = c.biohuerto_id
-        where c.disponible = true
+        left join unidades un on un.id = c.unidad_id
+        left join cultivos cu on cu.id = c.cultivo_id
+        left join especies e on e.id = cu.especie_id
+        left join biohuertos b on b.id = cu.biohuerto_id
+        where c.estado in ('disponible', 'publicado')
           and c.deleted_at is null
-          and b.deleted_at is null
         order by c.fecha_cosecha desc, c.created_at desc
         limit 50
         """

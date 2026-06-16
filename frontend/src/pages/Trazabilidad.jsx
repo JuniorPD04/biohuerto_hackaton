@@ -1,223 +1,631 @@
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Coins, Leaf, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import EmptyState from "../components/ui/EmptyState.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
-import StatusBadge from "../components/ui/StatusBadge.jsx";
-import { useBiohuertos } from "../hooks/useBiohuertos.js";
-import { api } from "../lib/api.js";
-import { dateText, money } from "../lib/format.js";
+import { useEffect, useState } from "react";
+import {
+  PageHeader,
+  Card,
+  Button,
+  Field,
+  Input,
+  Textarea,
+  Select,
+  Modal,
+  Badge,
+  Tabs,
+} from "../components/ui/primitives.jsx";
+import DataTable from "../components/ui/DataTable.jsx";
+import { fmtFecha, fmtMoneda } from "../lib/theme.js";
+import {
+  trazabilidadApi,
+  biohuertosApi,
+  cultivosApi,
+  catalogosApi,
+} from "../lib/resources.js";
+import { useToast } from "../components/ui/Toast.jsx";
 
-const practicaSchema = z.object({
-  biohuerto_id: z.coerce.number().positive(),
-  tipo_practica: z.string().min(2),
-  descripcion: z.string().min(2),
-  insumo: z.string().optional(),
-  cantidad: z.string().optional(),
-  unidad: z.string().optional(),
-  fecha_aplicacion: z.string().min(1),
-  es_sostenible: z.boolean().default(true),
-});
+const asList = (data) => (Array.isArray(data) ? data : data?.items || []);
 
-const costoSchema = z.object({
-  biohuerto_id: z.coerce.number().positive(),
-  categoria: z.string().min(2),
-  descripcion: z.string().min(2),
-  monto: z.string().min(1),
-  moneda: z.string().length(3),
-  fecha: z.string().min(1),
-});
+/**
+ * Select de catálogo con botón "+ Nuevo" para catálogos extensibles. Usa
+ * window.prompt para pedir el nombre, crea vía catalogosApi.create, recarga el
+ * catálogo y deja seleccionado el nuevo elemento.
+ */
+function CatalogSelect({ catalogo, items, value, onChange, onReload, placeholder, extensible }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
 
-export default function Trazabilidad() {
-  const { biohuertos, selected } = useBiohuertos();
-  const [practicas, setPracticas] = useState([]);
-  const [costos, setCostos] = useState([]);
-  const [resumen, setResumen] = useState(null);
-  const [error, setError] = useState("");
-
-  const practicaForm = useForm({
-    resolver: zodResolver(practicaSchema),
-    defaultValues: { es_sostenible: true },
-  });
-  const costoForm = useForm({
-    resolver: zodResolver(costoSchema),
-    defaultValues: { moneda: "PEN" },
-  });
-
-  useEffect(() => {
-    if (selected) {
-      practicaForm.setValue("biohuerto_id", selected.id);
-      costoForm.setValue("biohuerto_id", selected.id);
-    }
-  }, [costoForm, practicaForm, selected]);
-
-  const load = useCallback(async () => {
-    if (!selected) return;
-    setError("");
+  const handleNuevo = async () => {
+    const nombre = (window.prompt("Nombre del nuevo elemento:") || "").trim();
+    if (!nombre) return;
+    setBusy(true);
     try {
-      const [practicasRes, costosRes, resumenRes] = await Promise.all([
-        api.get(`/api/trazabilidad/practicas?biohuerto_id=${selected.id}`),
-        api.get(`/api/trazabilidad/costos?biohuerto_id=${selected.id}`),
-        api.get(`/api/trazabilidad/biohuertos/${selected.id}/resumen`),
-      ]);
-      setPracticas(practicasRes.data);
-      setCostos(costosRes.data);
-      setResumen(resumenRes.data);
-    } catch (err) {
-      setError(err.response?.data?.detail || "No se pudo cargar trazabilidad.");
+      const creado = await catalogosApi.create(catalogo, { nombre });
+      const fresh = asList(await catalogosApi.list(catalogo));
+      onReload(fresh);
+      const nuevoId = creado?.id ?? fresh.find((x) => x.nombre === nombre)?.id ?? "";
+      if (nuevoId) onChange(String(nuevoId));
+      toast("Elemento agregado");
+    } catch {
+      toast("No se pudo crear el elemento", "danger");
+    } finally {
+      setBusy(false);
     }
-  }, [selected]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  async function createPractica(values) {
-    await api.post("/api/trazabilidad/practicas", {
-      ...values,
-      cantidad: values.cantidad || null,
-      insumo: values.insumo || null,
-      unidad: values.unidad || null,
-    });
-    practicaForm.reset({ biohuerto_id: selected?.id, es_sostenible: true });
-    load();
-  }
-
-  async function createCosto(values) {
-    await api.post("/api/trazabilidad/costos", values);
-    costoForm.reset({ biohuerto_id: selected?.id, moneda: "PEN" });
-    load();
-  }
+  };
 
   return (
-    <div>
-      <PageHeader
-        title="Trazabilidad"
-        eyebrow={selected?.nombre || "Practicas y costos"}
-        actions={
-          <button className="icon-button" onClick={load} title="Actualizar" type="button">
-            <RefreshCw size={18} />
-          </button>
-        }
+    <div className="flex items-center gap-2">
+      <Select value={value} onChange={(e) => onChange(e.target.value)} className="flex-1">
+        <option value="">{placeholder || "Selecciona…"}</option>
+        {items.map((it) => (
+          <option key={it.id} value={it.id}>
+            {it.nombre}
+          </option>
+        ))}
+      </Select>
+      {extensible && (
+        <Button variant="secondary" size="sm" icon="plus" onClick={handleNuevo} disabled={busy}>
+          Nuevo
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/* ============================ PRÁCTICAS ============================ */
+
+const PRACTICA_FORM = {
+  cultivo_id: "",
+  tipo: "",
+  descripcion: "",
+  insumo_id: "",
+  cantidad: "",
+  unidad_id: "",
+  fecha: "",
+};
+
+function PracticaModal({ open, onClose, onSave }) {
+  const [form, setForm] = useState(PRACTICA_FORM);
+  const [saving, setSaving] = useState(false);
+  const [cultivos, setCultivos] = useState([]);
+  const [tipos, setTipos] = useState([]);
+  const [insumos, setInsumos] = useState([]);
+  const [unidades, setUnidades] = useState([]);
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(PRACTICA_FORM);
+    let cancel = false;
+    (async () => {
+      try {
+        const [cul, tip, ins, uni] = await Promise.all([
+          cultivosApi.list(),
+          catalogosApi.list("tipos-practica"),
+          catalogosApi.list("insumos"),
+          catalogosApi.list("unidades"),
+        ]);
+        if (cancel) return;
+        setCultivos(asList(cul));
+        setTipos(asList(tip));
+        setInsumos(asList(ins));
+        setUnidades(asList(uni));
+      } catch {
+        /* selects vacíos */
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [open]);
+
+  if (!open) return null;
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setVal = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      await onSave({
+        cultivo_id: form.cultivo_id,
+        tipo: form.tipo,
+        descripcion: form.descripcion,
+        insumo_id: form.insumo_id === "" ? null : form.insumo_id,
+        cantidad: form.cantidad === "" ? null : Number(form.cantidad),
+        unidad_id: form.unidad_id === "" ? null : form.unidad_id,
+        fecha: form.fecha || null,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      width={580}
+      title="Registrar práctica"
+      subtitle="Labor agrícola aplicada al cultivo"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={saving || !form.cultivo_id || !form.tipo}>
+            {saving ? "Guardando…" : "Registrar"}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-[18px]">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Cultivo">
+            <Select value={form.cultivo_id} onChange={set("cultivo_id")}>
+              <option value="">Selecciona un cultivo</option>
+              {cultivos.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.especie || c.nombre} {c.codigo ? `· ${c.codigo}` : ""}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Tipo de práctica">
+            <Select value={form.tipo} onChange={set("tipo")}>
+              <option value="">Selecciona un tipo</option>
+              {tipos.map((t) => (
+                <option key={t.id} value={t.nombre}>
+                  {t.nombre}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <Field label="Insumo">
+          <CatalogSelect
+            catalogo="insumos"
+            items={insumos}
+            value={form.insumo_id}
+            onChange={setVal("insumo_id")}
+            onReload={setInsumos}
+            placeholder="Sin insumo"
+            extensible
+          />
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Cantidad">
+            <Input type="number" value={form.cantidad} onChange={set("cantidad")} placeholder="0" />
+          </Field>
+          <Field label="Unidad">
+            <CatalogSelect
+              catalogo="unidades"
+              items={unidades}
+              value={form.unidad_id}
+              onChange={setVal("unidad_id")}
+              onReload={setUnidades}
+              placeholder="Sin unidad"
+              extensible
+            />
+          </Field>
+        </div>
+        <Field label="Fecha">
+          <Input type="date" value={form.fecha} onChange={set("fecha")} />
+        </Field>
+        <Field label="Descripción">
+          <Textarea
+            value={form.descripcion}
+            onChange={set("descripcion")}
+            placeholder="Detalle de la práctica…"
+          />
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
+function PracticasTab({ biohuertoId }) {
+  const toast = useToast();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const params = biohuertoId ? { biohuerto_id: biohuertoId } : {};
+      setRows(asList(await trazabilidadApi.practicas(params)));
+    } catch {
+      toast("No se pudieron cargar las prácticas", "danger");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [biohuertoId]);
+
+  const handleSave = async (body) => {
+    try {
+      await trazabilidadApi.crearPractica(body);
+      toast("Práctica registrada");
+      setOpen(false);
+      await load();
+    } catch {
+      toast("No se pudo registrar la práctica", "danger");
+    }
+  };
+
+  const columns = [
+    {
+      key: "cultivo",
+      label: "Cultivo",
+      width: "1.2fr",
+      render: (r) => (
+        <span className="block overflow-hidden text-ellipsis whitespace-nowrap font-extrabold text-text">
+          {r.cultivo || "—"}
+        </span>
+      ),
+    },
+    { key: "tipo", label: "Tipo", width: "1fr" },
+    { key: "insumo", label: "Insumo", width: "1fr" },
+    {
+      key: "cantidad",
+      label: "Cantidad",
+      width: ".9fr",
+      render: (r) =>
+        r.cantidad != null ? `${r.cantidad} ${r.unidad || ""}`.trim() : "—",
+    },
+    {
+      key: "sostenible",
+      label: "Sostenible",
+      width: ".8fr",
+      render: (r) =>
+        r.sostenible ? (
+          <Badge bg="#dcefd7" fg="#2f6b34" dot="#5aa860">
+            Sí
+          </Badge>
+        ) : (
+          <Badge bg="#eef2ec" fg="#6e786f">
+            No
+          </Badge>
+        ),
+    },
+    {
+      key: "fecha",
+      label: "Fecha",
+      width: ".9fr",
+      render: (r) => <span className="whitespace-nowrap text-muted-1">{fmtFecha(r.fecha)}</span>,
+    },
+  ];
+
+  return (
+    <>
+      <div className="mb-4 flex justify-end">
+        <Button icon="plus" onClick={() => setOpen(true)}>
+          Registrar práctica
+        </Button>
+      </div>
+      <DataTable
+        columns={columns}
+        rows={rows}
+        loading={loading}
+        empty={{
+          icon: "recycle",
+          title: "No hay prácticas",
+          desc: "No se encontraron prácticas para el biohuerto seleccionado.",
+        }}
       />
-      {error && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-      {resumen && (
-        <div className="mb-4 grid gap-3 sm:grid-cols-3">
-          <Summary icon={Leaf} label="Practicas sostenibles" value={`${resumen.practicas_sostenibles}/${resumen.practicas_total}`} />
-          <Summary icon={Leaf} label="Sostenibilidad" value={`${resumen.sostenibilidad_porcentaje}%`} />
-          <Summary icon={Coins} label="Costos acumulados" value={money(resumen.costos_total)} />
+      {!loading && rows.length > 0 && (
+        <div className="mt-7 border-t border-line pt-[22px] text-sm text-muted-2">
+          Mostrando {rows.length} práctica{rows.length === 1 ? "" : "s"}
         </div>
       )}
+      <PracticaModal open={open} onClose={() => setOpen(false)} onSave={handleSave} />
+    </>
+  );
+}
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <FormPanel title="Registrar practica">
-          <form onSubmit={practicaForm.handleSubmit(createPractica)} className="space-y-3">
-            <BiohuertoSelect biohuertos={biohuertos} register={practicaForm.register("biohuerto_id")} />
-            <input className="form-input" placeholder="Tipo de practica" {...practicaForm.register("tipo_practica")} />
-            <textarea className="form-input min-h-24 resize-y" placeholder="Descripcion" {...practicaForm.register("descripcion")} />
-            <div className="grid grid-cols-3 gap-2">
-              <input className="form-input" placeholder="Insumo" {...practicaForm.register("insumo")} />
-              <input className="form-input" placeholder="Cantidad" type="number" step="0.01" {...practicaForm.register("cantidad")} />
-              <input className="form-input" placeholder="Unidad" {...practicaForm.register("unidad")} />
-            </div>
-            <input className="form-input" type="date" {...practicaForm.register("fecha_aplicacion")} />
-            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-              <input className="h-4 w-4 accent-leaf-800" type="checkbox" {...practicaForm.register("es_sostenible")} />
-              Practica sostenible
-            </label>
-            <button className="h-10 w-full rounded-md bg-leaf-800 text-sm font-bold text-white hover:bg-leaf-900" type="submit">
-              Guardar practica
-            </button>
-          </form>
-        </FormPanel>
+/* ============================ COSTOS ============================ */
 
-        <FormPanel title="Registrar costo">
-          <form onSubmit={costoForm.handleSubmit(createCosto)} className="space-y-3">
-            <BiohuertoSelect biohuertos={biohuertos} register={costoForm.register("biohuerto_id")} />
-            <input className="form-input" placeholder="Categoria" {...costoForm.register("categoria")} />
-            <textarea className="form-input min-h-24 resize-y" placeholder="Descripcion" {...costoForm.register("descripcion")} />
-            <div className="grid grid-cols-[1fr_90px] gap-2">
-              <input className="form-input" placeholder="Monto" type="number" step="0.01" {...costoForm.register("monto")} />
-              <input className="form-input" {...costoForm.register("moneda")} />
-            </div>
-            <input className="form-input" type="date" {...costoForm.register("fecha")} />
-            <button className="h-10 w-full rounded-md bg-slate-900 text-sm font-bold text-white hover:bg-slate-800" type="submit">
-              Guardar costo
-            </button>
-          </form>
-        </FormPanel>
+const COSTO_FORM = {
+  cultivo_id: "",
+  categoria: "",
+  descripcion: "",
+  cantidad: "",
+  unidad_id: "",
+  monto: "",
+  moneda: "PEN",
+  fecha: "",
+};
+
+function CostoModal({ open, onClose, onSave }) {
+  const [form, setForm] = useState(COSTO_FORM);
+  const [saving, setSaving] = useState(false);
+  const [cultivos, setCultivos] = useState([]);
+  const [categorias, setCategorias] = useState([]);
+  const [unidades, setUnidades] = useState([]);
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(COSTO_FORM);
+    let cancel = false;
+    (async () => {
+      try {
+        const [cul, cat, uni] = await Promise.all([
+          cultivosApi.list(),
+          catalogosApi.list("categorias-costo"),
+          catalogosApi.list("unidades"),
+        ]);
+        if (cancel) return;
+        setCultivos(asList(cul));
+        setCategorias(asList(cat));
+        setUnidades(asList(uni));
+      } catch {
+        /* selects vacíos */
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [open]);
+
+  if (!open) return null;
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setVal = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      await onSave({
+        cultivo_id: form.cultivo_id,
+        categoria: form.categoria,
+        descripcion: form.descripcion,
+        cantidad: form.cantidad === "" ? null : Number(form.cantidad),
+        unidad_id: form.unidad_id === "" ? null : form.unidad_id,
+        monto: form.monto === "" ? null : Number(form.monto),
+        moneda: form.moneda,
+        fecha: form.fecha || null,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      width={580}
+      title="Registrar costo"
+      subtitle="Gasto asociado al cultivo"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={saving || !form.cultivo_id || !form.categoria}>
+            {saving ? "Guardando…" : "Registrar"}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-[18px]">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Cultivo">
+            <Select value={form.cultivo_id} onChange={set("cultivo_id")}>
+              <option value="">Selecciona un cultivo</option>
+              {cultivos.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.especie || c.nombre} {c.codigo ? `· ${c.codigo}` : ""}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Categoría">
+            <Select value={form.categoria} onChange={set("categoria")}>
+              <option value="">Selecciona una categoría</option>
+              {categorias.map((c) => (
+                <option key={c.id} value={c.nombre}>
+                  {c.nombre}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Cantidad">
+            <Input type="number" value={form.cantidad} onChange={set("cantidad")} placeholder="0" />
+          </Field>
+          <Field label="Unidad">
+            <CatalogSelect
+              catalogo="unidades"
+              items={unidades}
+              value={form.unidad_id}
+              onChange={setVal("unidad_id")}
+              onReload={setUnidades}
+              placeholder="Sin unidad"
+              extensible
+            />
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Monto">
+            <Input type="number" step="0.01" value={form.monto} onChange={set("monto")} placeholder="0.00" />
+          </Field>
+          <Field label="Moneda">
+            <Select value={form.moneda} onChange={set("moneda")}>
+              <option value="PEN">PEN (S/)</option>
+              <option value="USD">USD ($)</option>
+            </Select>
+          </Field>
+        </div>
+        <Field label="Fecha">
+          <Input type="date" value={form.fecha} onChange={set("fecha")} />
+        </Field>
+        <Field label="Descripción">
+          <Textarea
+            value={form.descripcion}
+            onChange={set("descripcion")}
+            placeholder="Detalle del costo…"
+          />
+        </Field>
       </div>
+    </Modal>
+  );
+}
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-2">
-        <section className="space-y-3">
-          <h2 className="text-base font-bold text-slate-950">Practicas recientes</h2>
-          {practicas.length === 0 && <EmptyState title="Sin practicas registradas" />}
-          {practicas.map((item) => (
-            <article className="panel p-4" key={item.id}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-bold text-slate-950">{item.tipo_practica}</h3>
-                  <p className="mt-1 text-sm text-slate-600">{item.descripcion}</p>
-                </div>
-                <StatusBadge tone={item.es_sostenible ? "leaf" : "amber"}>{item.es_sostenible ? "Sostenible" : "Revision"}</StatusBadge>
-              </div>
-              <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{dateText(item.fecha_aplicacion)}</p>
-            </article>
-          ))}
-        </section>
+function CostosTab({ biohuertoId }) {
+  const toast = useToast();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
 
-        <section className="space-y-3">
-          <h2 className="text-base font-bold text-slate-950">Costos recientes</h2>
-          {costos.length === 0 && <EmptyState title="Sin costos registrados" />}
-          {costos.map((item) => (
-            <article className="panel flex items-center justify-between gap-3 p-4" key={item.id}>
-              <div>
-                <h3 className="font-bold text-slate-950">{item.categoria}</h3>
-                <p className="mt-1 text-sm text-slate-600">{item.descripcion}</p>
-                <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{dateText(item.fecha)}</p>
-              </div>
-              <p className="text-lg font-bold text-slate-950">{money(item.monto)}</p>
-            </article>
-          ))}
-        </section>
+  const load = async () => {
+    setLoading(true);
+    try {
+      const params = biohuertoId ? { biohuerto_id: biohuertoId } : {};
+      setRows(asList(await trazabilidadApi.costos(params)));
+    } catch {
+      toast("No se pudieron cargar los costos", "danger");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [biohuertoId]);
+
+  const handleSave = async (body) => {
+    try {
+      await trazabilidadApi.crearCosto(body);
+      toast("Costo registrado");
+      setOpen(false);
+      await load();
+    } catch {
+      toast("No se pudo registrar el costo", "danger");
+    }
+  };
+
+  const columns = [
+    {
+      key: "cultivo",
+      label: "Cultivo",
+      width: "1.2fr",
+      render: (r) => (
+        <span className="block overflow-hidden text-ellipsis whitespace-nowrap font-extrabold text-text">
+          {r.cultivo || "—"}
+        </span>
+      ),
+    },
+    { key: "categoria", label: "Categoría", width: "1fr" },
+    {
+      key: "descripcion",
+      label: "Descripción",
+      width: "1.4fr",
+      render: (r) => (
+        <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-muted-1">
+          {r.descripcion || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "monto",
+      label: "Monto",
+      width: ".9fr",
+      align: "right",
+      render: (r) => (
+        <span className="whitespace-nowrap font-extrabold text-terracotta">
+          {fmtMoneda(r.monto, r.moneda)}
+        </span>
+      ),
+    },
+    {
+      key: "fecha",
+      label: "Fecha",
+      width: ".9fr",
+      render: (r) => <span className="whitespace-nowrap text-muted-1">{fmtFecha(r.fecha)}</span>,
+    },
+  ];
+
+  return (
+    <>
+      <div className="mb-4 flex justify-end">
+        <Button icon="plus" onClick={() => setOpen(true)}>
+          Registrar costo
+        </Button>
       </div>
+      <DataTable
+        columns={columns}
+        rows={rows}
+        loading={loading}
+        empty={{
+          icon: "coins",
+          title: "No hay costos",
+          desc: "No se encontraron costos para el biohuerto seleccionado.",
+        }}
+      />
+      {!loading && rows.length > 0 && (
+        <div className="mt-7 border-t border-line pt-[22px] text-sm text-muted-2">
+          Mostrando {rows.length} costo{rows.length === 1 ? "" : "s"}
+        </div>
+      )}
+      <CostoModal open={open} onClose={() => setOpen(false)} onSave={handleSave} />
+    </>
+  );
+}
+
+/* ============================ PÁGINA ============================ */
+
+const TABS = [
+  { id: "practicas", label: "Prácticas", icon: "recycle" },
+  { id: "costos", label: "Costos", icon: "coins" },
+];
+
+export default function Trazabilidad() {
+  const toast = useToast();
+  const [tab, setTab] = useState("practicas");
+  const [biohuertos, setBiohuertos] = useState([]);
+  const [biohuertoId, setBiohuertoId] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setBiohuertos(asList(await biohuertosApi.list()));
+      } catch {
+        toast("No se pudieron cargar los biohuertos", "danger");
+      }
+    })();
+  }, []);
+
+  return (
+    <div className="animate-fade">
+      <PageHeader
+        title="Trazabilidad"
+        subtitle="Registro de prácticas agrícolas y costos por cultivo."
+      />
+
+      <Tabs tabs={TABS} active={tab} onChange={setTab} />
+
+      <Card
+        pad="p-5"
+        className="mb-6"
+        style={{ background: "var(--chip-2)", border: "1px solid var(--line)" }}
+      >
+        <Field label="Biohuerto">
+          <Select value={biohuertoId} onChange={(e) => setBiohuertoId(e.target.value)}>
+            <option value="">Todos los biohuertos</option>
+            {biohuertos.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.nombre}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </Card>
+
+      {tab === "practicas" ? (
+        <PracticasTab biohuertoId={biohuertoId} />
+      ) : (
+        <CostosTab biohuertoId={biohuertoId} />
+      )}
     </div>
-  );
-}
-
-function Summary({ icon: Icon, label, value }) {
-  return (
-    <div className="panel flex items-center gap-3 p-4">
-      <div className="flex h-10 w-10 items-center justify-center rounded-md bg-leaf-50 text-leaf-800">
-        <Icon size={20} />
-      </div>
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-        <p className="text-xl font-bold text-slate-950">{value}</p>
-      </div>
-    </div>
-  );
-}
-
-function FormPanel({ title, children }) {
-  return (
-    <section className="panel p-4">
-      <h2 className="mb-4 text-base font-bold text-slate-950">{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function BiohuertoSelect({ biohuertos, register }) {
-  return (
-    <select className="form-input" {...register}>
-      {biohuertos.map((item) => (
-        <option key={item.id} value={item.id}>
-          {item.nombre}
-        </option>
-      ))}
-    </select>
   );
 }

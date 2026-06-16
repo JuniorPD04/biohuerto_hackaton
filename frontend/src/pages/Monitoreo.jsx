@@ -1,235 +1,363 @@
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Activity, RefreshCw, WifiOff } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import EmptyState from "../components/ui/EmptyState.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
-import { useOffline } from "../context/OfflineContext.jsx";
-import { useBiohuertos } from "../hooks/useBiohuertos.js";
-import { api } from "../lib/api.js";
-import { dateText, number } from "../lib/format.js";
+import { useEffect, useState } from "react";
+import {
+  PageHeader,
+  Card,
+  Button,
+  IconBtn,
+  Field,
+  Input,
+  Textarea,
+  Select,
+  Modal,
+  Badge,
+} from "../components/ui/primitives.jsx";
+import DataTable from "../components/ui/DataTable.jsx";
+import { fmtFecha } from "../lib/theme.js";
+import { monitoreoApi, biohuertosApi, cultivosApi } from "../lib/resources.js";
+import { useToast } from "../components/ui/Toast.jsx";
 
-const schema = z.object({
-  biohuerto_id: z.coerce.number().positive(),
-  humedad_porcentaje: z.string().optional(),
-  temperatura_c: z.string().optional(),
-  luminosidad_lux: z.string().optional(),
-  incidencia: z.string().optional(),
-  observacion: z.string().optional(),
-});
+const asList = (data) => (Array.isArray(data) ? data : data?.items || []);
 
-export default function Monitoreo() {
-  const { biohuertos, selected } = useBiohuertos();
-  const { isOnline, enqueue, pendingCount, syncPending, lastSyncMessage } = useOffline();
-  const [registros, setRegistros] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [apiError, setApiError] = useState("");
-  const {
-    register,
-    handleSubmit,
-    reset,
-    setValue,
-    formState: { errors, isSubmitting },
-  } = useForm({ resolver: zodResolver(schema) });
+const FUENTES = [
+  { value: "manual", label: "Manual" },
+  { value: "iot", label: "IoT" },
+];
+
+const FuenteBadge = ({ fuente }) =>
+  fuente === "iot" ? (
+    <Badge bg="#d6e8f0" fg="#1f5a7a" dot="#3f8ab0">
+      IoT
+    </Badge>
+  ) : (
+    <Badge bg="#eef2ec" fg="#5a625a" dot="#9aa39a">
+      Manual
+    </Badge>
+  );
+
+const num = (v, suffix = "") => (v == null || v === "" ? "—" : `${v}${suffix}`);
+
+const EMPTY_FORM = {
+  cultivo_id: "",
+  fuente: "manual",
+  humedad_pct: "",
+  temperatura_c: "",
+  luminosidad_lux: "",
+  ph_suelo: "",
+  observacion: "",
+};
+
+function MonitoreoModal({ open, mode, row, onClose, onSave }) {
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [cultivos, setCultivos] = useState([]);
 
   useEffect(() => {
-    if (selected) setValue("biohuerto_id", selected.id);
-  }, [selected, setValue]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const url = selected ? `/api/monitoreo?biohuerto_id=${selected.id}` : "/api/monitoreo";
-      const { data } = await api.get(url);
-      setRegistros(data);
-    } finally {
-      setLoading(false);
-    }
-  }, [selected]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  async function onSubmit(values) {
-    setApiError("");
-    const createdAt = new Date().toISOString();
-    const monitoreoPayload = {
-      ...values,
-      humedad_porcentaje: values.humedad_porcentaje || null,
-      temperatura_c: values.temperatura_c || null,
-      luminosidad_lux: values.luminosidad_lux || null,
-      incidencia: values.incidencia || null,
-      observacion: values.observacion || null,
-      registrado_en: createdAt,
-    };
-    try {
-      if (!isOnline) {
-        const monitoreoId = crypto.randomUUID();
-        await enqueue({
-          tabla: "monitoreo_registros",
-          uuid: monitoreoId,
-          payload: monitoreoPayload,
-          created_at_local: createdAt,
-        });
-        if (values.incidencia) {
-          await enqueue({
-            tabla: "incidencias",
-            uuid: crypto.randomUUID(),
-            payload: {
-              biohuerto_id: values.biohuerto_id,
-              tipo: "monitoreo",
-              descripcion: values.incidencia,
-              severidad: "media",
-              estado: "abierta",
-              reportado_en: createdAt,
-            },
-            created_at_local: createdAt,
-          });
-        }
-        setRegistros((current) => [
-          {
-            id: monitoreoId,
-            ...monitoreoPayload,
-            is_synced: false,
-            created_at: createdAt,
-            updated_at: createdAt,
-          },
-          ...current,
-        ]);
-      } else {
-        await api.post("/api/monitoreo", monitoreoPayload);
-        if (values.incidencia) {
-          await api.post("/api/incidencias", {
-            biohuerto_id: values.biohuerto_id,
-            tipo: "monitoreo",
-            descripcion: values.incidencia,
-            severidad: "media",
-            reportado_en: createdAt,
-          });
-        }
+    if (!open || mode !== "new") return;
+    let cancel = false;
+    (async () => {
+      try {
+        const data = await cultivosApi.list();
+        if (!cancel) setCultivos(asList(data));
+      } catch {
+        if (!cancel) setCultivos([]);
       }
-      reset({ biohuerto_id: selected?.id });
-      if (isOnline) load();
-    } catch (err) {
-      setApiError(err.response?.data?.detail || "No se pudo registrar monitoreo.");
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [open, mode]);
+
+  useEffect(() => {
+    if (open && mode === "new") setForm(EMPTY_FORM);
+  }, [open, mode]);
+
+  if (!open) return null;
+  const view = mode === "view";
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const toNum = (v) => (v === "" ? null : Number(v));
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      await onSave({
+        cultivo_id: form.cultivo_id,
+        fuente: form.fuente,
+        humedad_pct: toNum(form.humedad_pct),
+        temperatura_c: toNum(form.temperatura_c),
+        luminosidad_lux: toNum(form.luminosidad_lux),
+        ph_suelo: toNum(form.ph_suelo),
+        observacion: form.observacion,
+      });
+    } finally {
+      setSaving(false);
     }
+  };
+
+  if (view) {
+    return (
+      <Modal
+        open={open}
+        onClose={onClose}
+        width={520}
+        title="Registro de monitoreo"
+        subtitle={`${row?.cultivo || "—"} · ${row?.biohuerto || "—"}`}
+      >
+        <div className="grid gap-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Stat label="Cultivo" value={row?.cultivo} />
+            <Stat label="Biohuerto" value={row?.biohuerto} />
+            <Stat label="Fuente" value={<FuenteBadge fuente={row?.fuente} />} />
+            <Stat label="Registrado" value={fmtFecha(row?.registrado_en)} />
+            <Stat label="Humedad" value={num(row?.humedad_pct, " %")} />
+            <Stat label="Temperatura" value={num(row?.temperatura_c, " °C")} />
+            <Stat label="Luminosidad" value={num(row?.luminosidad_lux, " lux")} />
+            <Stat label="pH del suelo" value={num(row?.ph_suelo)} />
+          </div>
+          <div className="rounded-xl border border-line bg-white px-4 py-[14px]">
+            <div className="text-[11.5px] font-extrabold uppercase tracking-[.05em] text-muted-2">
+              Observación
+            </div>
+            <div className="mt-[6px] text-[14.5px] leading-[1.5] text-text">
+              {row?.observacion || "Sin observaciones"}
+            </div>
+          </div>
+        </div>
+      </Modal>
+    );
   }
 
   return (
-    <div>
+    <Modal
+      open={open}
+      onClose={onClose}
+      width={560}
+      title="Registrar monitoreo"
+      subtitle="Lectura ambiental del cultivo"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={saving || !form.cultivo_id}>
+            {saving ? "Guardando…" : "Registrar"}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-[18px]">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Cultivo">
+            <Select value={form.cultivo_id} onChange={set("cultivo_id")}>
+              <option value="">Selecciona un cultivo</option>
+              {cultivos.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.especie || c.nombre} {c.codigo ? `· ${c.codigo}` : ""}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Fuente">
+            <Select value={form.fuente} onChange={set("fuente")}>
+              {FUENTES.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Humedad (%)">
+            <Input type="number" value={form.humedad_pct} onChange={set("humedad_pct")} placeholder="0" />
+          </Field>
+          <Field label="Temperatura (°C)">
+            <Input type="number" value={form.temperatura_c} onChange={set("temperatura_c")} placeholder="0" />
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Luminosidad (lux)">
+            <Input
+              type="number"
+              value={form.luminosidad_lux}
+              onChange={set("luminosidad_lux")}
+              placeholder="0"
+            />
+          </Field>
+          <Field label="pH del suelo">
+            <Input type="number" step="0.1" value={form.ph_suelo} onChange={set("ph_suelo")} placeholder="0" />
+          </Field>
+        </div>
+        <Field label="Observación">
+          <Textarea
+            value={form.observacion}
+            onChange={set("observacion")}
+            placeholder="Notas de la lectura…"
+          />
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <div className="rounded-xl border border-line bg-white px-4 py-[14px]">
+      <div className="text-[11.5px] font-extrabold uppercase tracking-[.05em] text-muted-2">
+        {label}
+      </div>
+      <div className="mt-[5px] text-[15px] font-extrabold text-text">{value ?? "—"}</div>
+    </div>
+  );
+}
+
+export default function Monitoreo() {
+  const toast = useToast();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [biohuertos, setBiohuertos] = useState([]);
+  const [biohuertoId, setBiohuertoId] = useState("");
+  const [modal, setModal] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setBiohuertos(asList(await biohuertosApi.list()));
+      } catch {
+        /* filtro queda vacío */
+      }
+    })();
+  }, []);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const params = biohuertoId ? { biohuerto_id: biohuertoId } : {};
+      setRows(asList(await monitoreoApi.list(params)));
+    } catch {
+      toast("No se pudieron cargar los registros de monitoreo", "danger");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [biohuertoId]);
+
+  const handleSave = async (body) => {
+    try {
+      await monitoreoApi.create(body);
+      toast("Monitoreo registrado");
+      setModal(null);
+      await load();
+    } catch {
+      toast("No se pudo registrar el monitoreo", "danger");
+    }
+  };
+
+  const columns = [
+    {
+      key: "cultivo",
+      label: "Cultivo",
+      width: "1.3fr",
+      render: (r) => (
+        <span className="block overflow-hidden text-ellipsis whitespace-nowrap font-extrabold text-text">
+          {r.cultivo || "—"}
+        </span>
+      ),
+    },
+    { key: "biohuerto", label: "Biohuerto", width: "1.3fr" },
+    {
+      key: "fuente",
+      label: "Fuente",
+      width: ".8fr",
+      render: (r) => <FuenteBadge fuente={r.fuente} />,
+    },
+    {
+      key: "humedad_pct",
+      label: "Humedad",
+      width: ".8fr",
+      render: (r) => num(r.humedad_pct, " %"),
+    },
+    {
+      key: "temperatura_c",
+      label: "Temp.",
+      width: ".8fr",
+      render: (r) => num(r.temperatura_c, " °C"),
+    },
+    {
+      key: "ph_suelo",
+      label: "pH",
+      width: ".6fr",
+      render: (r) => num(r.ph_suelo),
+    },
+    {
+      key: "registrado_en",
+      label: "Fecha",
+      width: ".9fr",
+      render: (r) => (
+        <span className="whitespace-nowrap text-muted-1">{fmtFecha(r.registrado_en)}</span>
+      ),
+    },
+  ];
+
+  return (
+    <div className="animate-fade">
       <PageHeader
-        title="Monitoreo"
-        eyebrow="Registro manual"
-        actions={
-          pendingCount > 0 ? (
-            <button
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-amber-50 px-3 text-sm font-bold text-amber-700"
-              onClick={syncPending}
-              type="button"
-            >
-              <RefreshCw size={17} />
-              {pendingCount} pendientes
-            </button>
-          ) : null
+        title="Monitoreo ambiental"
+        subtitle="Lecturas de humedad, temperatura, luz y pH de los cultivos."
+        action={
+          <Button icon="plus" onClick={() => setModal({ mode: "new" })}>
+            Registrar monitoreo
+          </Button>
         }
       />
-      {!isOnline && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-          <WifiOff size={17} />
-          Sin conexion, guardando monitoreo e incidencias localmente.
+
+      <Card
+        pad="p-5"
+        className="mb-6"
+        style={{ background: "var(--chip-2)", border: "1px solid var(--line)" }}
+      >
+        <Field label="Biohuerto">
+          <Select value={biohuertoId} onChange={(e) => setBiohuertoId(e.target.value)}>
+            <option value="">Todos los biohuertos</option>
+            {biohuertos.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.nombre}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </Card>
+
+      <DataTable
+        columns={columns}
+        rows={rows}
+        loading={loading}
+        empty={{
+          icon: "activity",
+          title: "No hay registros de monitoreo",
+          desc: "No se encontraron lecturas para el biohuerto seleccionado.",
+        }}
+        rowActions={(r) => (
+          <IconBtn name="eye" title="Ver detalle" onClick={() => setModal({ mode: "view", row: r })} />
+        )}
+      />
+
+      {!loading && rows.length > 0 && (
+        <div className="mt-7 border-t border-line pt-[22px] text-sm text-muted-2">
+          Mostrando {rows.length} registro{rows.length === 1 ? "" : "s"} de monitoreo
         </div>
       )}
-      {lastSyncMessage && isOnline && pendingCount > 0 && (
-        <p className="mb-4 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700">{lastSyncMessage}</p>
-      )}
-      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-        <form className="panel p-4" onSubmit={handleSubmit(onSubmit)}>
-          <div className="flex items-center gap-2">
-            <Activity className="text-leaf-800" size={18} />
-            <h2 className="text-base font-bold text-slate-950">Nuevo registro</h2>
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Field label="Biohuerto" error={errors.biohuerto_id?.message}>
-              <select className="form-input" {...register("biohuerto_id")}>
-                {biohuertos.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.nombre}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Humedad %" error={errors.humedad_porcentaje?.message}>
-              <input className="form-input" type="number" step="0.01" {...register("humedad_porcentaje")} />
-            </Field>
-            <Field label="Temperatura C" error={errors.temperatura_c?.message}>
-              <input className="form-input" type="number" step="0.01" {...register("temperatura_c")} />
-            </Field>
-            <Field label="Luminosidad lux" error={errors.luminosidad_lux?.message}>
-              <input className="form-input" type="number" step="0.01" {...register("luminosidad_lux")} />
-            </Field>
-            <div className="sm:col-span-2">
-              <Field label="Incidencia" error={errors.incidencia?.message}>
-                <input className="form-input" placeholder="Opcional" {...register("incidencia")} />
-              </Field>
-            </div>
-            <div className="sm:col-span-2">
-              <Field label="Observacion" error={errors.observacion?.message}>
-                <textarea className="form-input min-h-24 resize-y" {...register("observacion")} />
-              </Field>
-            </div>
-          </div>
-          {apiError && <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{apiError}</p>}
-          <button className="mt-4 h-10 w-full rounded-md bg-leaf-800 text-sm font-bold text-white hover:bg-leaf-900 disabled:opacity-60" disabled={isSubmitting} type="submit">
-            {isSubmitting ? "Registrando..." : "Registrar monitoreo"}
-          </button>
-        </form>
 
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-slate-950">Historial reciente</h2>
-            <button className="icon-button" onClick={load} title="Actualizar" type="button">
-              <RefreshCw size={18} />
-            </button>
-          </div>
-          {loading && <p className="text-sm text-slate-500">Cargando monitoreo...</p>}
-          {!loading && registros.length === 0 && <EmptyState title="Sin registros de monitoreo" detail="Agrega humedad, temperatura o incidencias para activar el seguimiento." />}
-          <div className="space-y-3">
-            {registros.map((item) => (
-              <article className="panel p-4" key={item.id}>
-                <div className="grid grid-cols-3 gap-2">
-                  <Reading label="Humedad" value={`${number(item.humedad_porcentaje)}%`} />
-                  <Reading label="Temp." value={`${number(item.temperatura_c)} C`} />
-                  <Reading label="Luz" value={number(item.luminosidad_lux)} />
-                </div>
-                {(item.incidencia || item.observacion) && <p className="mt-3 text-sm text-slate-600">{item.incidencia || item.observacion}</p>}
-                {item.is_synced === false && <p className="mt-2 text-xs font-bold uppercase tracking-wide text-amber-700">Pendiente de sincronizar</p>}
-                <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{dateText(item.registrado_en)}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-      </div>
+      <MonitoreoModal
+        open={!!modal}
+        mode={modal?.mode}
+        row={modal?.row}
+        onClose={() => setModal(null)}
+        onSave={handleSave}
+      />
     </div>
-  );
-}
-
-function Reading({ label, value }) {
-  return (
-    <div className="rounded-md bg-slate-50 p-2">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-bold text-slate-950">{value}</p>
-    </div>
-  );
-}
-
-function Field({ label, error, children }) {
-  return (
-    <label className="block">
-      <span className="form-label">{label}</span>
-      <span className="mt-1 block">{children}</span>
-      {error && <span className="mt-1 block text-xs text-red-600">{error}</span>}
-    </label>
   );
 }

@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/reportes", tags=["reportes"])
 
 @router.get("/{biohuerto_id}/pdf")
 async def download_biohuerto_pdf(
-    biohuerto_id: int,
+    biohuerto_id: str,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> StreamingResponse:
@@ -27,7 +27,7 @@ async def download_biohuerto_pdf(
     biohuerto_result = await session.execute(
         text(
             """
-            select id, user_id, nombre, codigo, area_m2, descripcion, created_at, updated_at
+            select id::text as id, nombre, codigo, area_m2, descripcion, created_at, updated_at
             from biohuertos
             where id = :biohuerto_id
               and deleted_at is null
@@ -40,11 +40,14 @@ async def download_biohuerto_pdf(
     cultivos_result = await session.execute(
         text(
             """
-            select especie, etapa, fecha_siembra, fecha_estimada_cosecha
-            from cultivos
-            where biohuerto_id = :biohuerto_id
-              and deleted_at is null
-            order by created_at desc
+            select e.nombre as especie, ef.nombre as etapa,
+                   c.fecha_siembra, c.fecha_estimada_cosecha
+            from cultivos c
+            join especies e on e.id = c.especie_id
+            join etapas_fenologicas ef on ef.id = c.etapa_id
+            where c.biohuerto_id = :biohuerto_id
+              and c.deleted_at is null
+            order by c.created_at desc
             limit 12
             """
         ),
@@ -55,11 +58,14 @@ async def download_biohuerto_pdf(
     costos_result = await session.execute(
         text(
             """
-            select categoria, descripcion, monto, moneda, fecha
-            from costeo_registros
-            where biohuerto_id = :biohuerto_id
-              and deleted_at is null
-            order by fecha desc, created_at desc
+            select cc.nombre as categoria, cp.descripcion, cp.monto, cp.moneda, cp.fecha
+            from costos_produccion cp
+            join cultivos c on c.id = cp.cultivo_id
+            join categorias_costo cc on cc.id = cp.categoria_id
+            where c.biohuerto_id = :biohuerto_id
+              and cp.deleted_at is null
+              and c.deleted_at is null
+            order by cp.fecha desc, cp.created_at desc
             limit 12
             """
         ),

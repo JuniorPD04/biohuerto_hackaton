@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.routers.biohuertos import _ensure_biohuerto_access
 from app.routers.cultivos import _ensure_cultivo_access
+from app.routers.incidencias import _resolve_tipo_id
 from app.schemas.sync import SyncConflict, SyncRegistro
 from app.schemas.users import CurrentUser
 
@@ -26,7 +27,7 @@ async def sync_registro(
 async def _validate_scope(
     session: AsyncSession,
     current_user: CurrentUser,
-    biohuerto_id: int,
+    biohuerto_id: UUID,
     cultivo_id: UUID | None,
 ) -> None:
     await _ensure_biohuerto_access(session, biohuerto_id, current_user)
@@ -93,9 +94,11 @@ async def _sync_monitoreo(
     registro: SyncRegistro,
 ) -> SyncConflict | None:
     payload = registro.payload
-    biohuerto_id = int(payload["biohuerto_id"])
+    biohuerto_id = UUID(str(payload["biohuerto_id"]))
     cultivo_id = UUID(str(payload["cultivo_id"])) if payload.get("cultivo_id") else None
     await _validate_scope(session, current_user, biohuerto_id, cultivo_id)
+    if cultivo_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El monitoreo requiere un cultivo")
 
     if await _server_wins_conflict(session, "monitoreo_registros", registro.uuid, registro.created_at_local):
         await _log_sync_queue(session, registro, "conflict", "server-wins")
@@ -105,18 +108,19 @@ async def _sync_monitoreo(
         text(
             """
             insert into monitoreo_registros (
-              id, biohuerto_id, cultivo_id, user_id, humedad_porcentaje, temperatura_c,
-              luminosidad_lux, incidencia, observacion, registrado_en, is_synced, last_synced_at
+              id, cultivo_id, fuente_id, usuario_id, humedad_pct, temperatura_c,
+              luminosidad_lux, ph_suelo, observacion, registrado_en, is_synced, last_synced_at
             )
             values (
-              :id, :biohuerto_id, :cultivo_id, :user_id, :humedad_porcentaje, :temperatura_c,
-              :luminosidad_lux, :incidencia, :observacion, :registrado_en, true, now()
+              :id, :cultivo_id, (select id from fuentes_monitoreo where codigo = 'manual'),
+              :usuario_id, :humedad_pct, :temperatura_c,
+              :luminosidad_lux, :ph_suelo, :observacion, :registrado_en, true, now()
             )
             on conflict (id) do update set
-              humedad_porcentaje = excluded.humedad_porcentaje,
+              humedad_pct = excluded.humedad_pct,
               temperatura_c = excluded.temperatura_c,
               luminosidad_lux = excluded.luminosidad_lux,
-              incidencia = excluded.incidencia,
+              ph_suelo = excluded.ph_suelo,
               observacion = excluded.observacion,
               registrado_en = excluded.registrado_en,
               is_synced = true,
@@ -125,13 +129,12 @@ async def _sync_monitoreo(
         ),
         {
             "id": registro.uuid,
-            "biohuerto_id": biohuerto_id,
             "cultivo_id": cultivo_id,
-            "user_id": current_user.id,
-            "humedad_porcentaje": payload.get("humedad_porcentaje"),
+            "usuario_id": current_user.id,
+            "humedad_pct": payload.get("humedad_pct"),
             "temperatura_c": payload.get("temperatura_c"),
             "luminosidad_lux": payload.get("luminosidad_lux"),
-            "incidencia": payload.get("incidencia"),
+            "ph_suelo": payload.get("ph_suelo"),
             "observacion": payload.get("observacion"),
             "registrado_en": payload.get("registrado_en") or registro.created_at_local,
         },
@@ -146,9 +149,18 @@ async def _sync_incidencia(
     registro: SyncRegistro,
 ) -> SyncConflict | None:
     payload = registro.payload
-    biohuerto_id = int(payload["biohuerto_id"])
+    biohuerto_id = UUID(str(payload["biohuerto_id"]))
     cultivo_id = UUID(str(payload["cultivo_id"])) if payload.get("cultivo_id") else None
     await _validate_scope(session, current_user, biohuerto_id, cultivo_id)
+    if cultivo_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La incidencia requiere un cultivo")
+
+    if payload.get("tipo_id") is not None:
+        tipo_id = int(payload["tipo_id"])
+    else:
+        tipo_id = await _resolve_tipo_id(session, str(payload.get("tipo") or "Otro"))
+
+    zona_id = int(payload["zona_id"]) if payload.get("zona_id") is not None else None
 
     if await _server_wins_conflict(session, "incidencias", registro.uuid, registro.created_at_local):
         await _log_sync_queue(session, registro, "conflict", "server-wins")
@@ -158,17 +170,18 @@ async def _sync_incidencia(
         text(
             """
             insert into incidencias (
-              id, biohuerto_id, cultivo_id, user_id, tipo, descripcion, severidad,
-              estado, reportado_en, is_synced, last_synced_at
+              id, cultivo_id, tipo_id, usuario_id, descripcion, severidad,
+              zona_id, estado, reportado_en, is_synced, last_synced_at
             )
             values (
-              :id, :biohuerto_id, :cultivo_id, :user_id, :tipo, :descripcion, :severidad,
-              :estado, :reportado_en, true, now()
+              :id, :cultivo_id, :tipo_id, :usuario_id, :descripcion, :severidad,
+              :zona_id, :estado, :reportado_en, true, now()
             )
             on conflict (id) do update set
-              tipo = excluded.tipo,
+              tipo_id = excluded.tipo_id,
               descripcion = excluded.descripcion,
               severidad = excluded.severidad,
+              zona_id = excluded.zona_id,
               estado = excluded.estado,
               reportado_en = excluded.reportado_en,
               is_synced = true,
@@ -177,12 +190,12 @@ async def _sync_incidencia(
         ),
         {
             "id": registro.uuid,
-            "biohuerto_id": biohuerto_id,
             "cultivo_id": cultivo_id,
-            "user_id": current_user.id,
-            "tipo": payload.get("tipo") or "incidencia",
+            "tipo_id": tipo_id,
+            "usuario_id": current_user.id,
             "descripcion": payload.get("descripcion") or payload.get("incidencia") or "Incidencia offline",
             "severidad": payload.get("severidad") or "media",
+            "zona_id": zona_id,
             "estado": payload.get("estado") or "abierta",
             "reportado_en": payload.get("reportado_en") or registro.created_at_local,
         },
