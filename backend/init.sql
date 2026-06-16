@@ -293,6 +293,8 @@ CREATE TABLE usuarios (
   password_hash       TEXT         NOT NULL,
   telefono_encrypted  BYTEA        NULL,
   direccion_encrypted BYTEA        NULL,
+  latitud             NUMERIC(9,6) NULL,                  -- GPS para ubicar en mapa (en claro, como biohuertos)
+  longitud            NUMERIC(9,6) NULL,
   is_active           BOOLEAN      NOT NULL DEFAULT TRUE,
   created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),

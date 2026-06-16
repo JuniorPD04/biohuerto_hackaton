@@ -2,6 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+  Tipografía "Humnst" (Humanist 521 BT) — fuente comercial de Bitstream,
+  NO disponible en Google Fonts. Para que se vea en TODAS las máquinas
+  (no solo donde esté instalada), coloca el archivo en
+  src/assets/fonts/humnst.woff2 y descomenta este bloque:
+
+@font-face {
+  font-family: "Humnst";
+  src: url("./assets/fonts/humnst.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+*/
+
 :root {
   --bg: #f3f6f1;
   --sidebar: #f7faf5;
@@ -37,7 +51,7 @@ body,
 }
 
 body {
-  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  font-family: "Humnst", "Roboto", system-ui, sans-serif;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;

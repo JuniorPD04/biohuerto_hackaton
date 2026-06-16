@@ -20,6 +20,7 @@ import {
 import { tintFor } from "../lib/theme.js";
 import { biohuertosApi, catalogosApi } from "../lib/resources.js";
 import { useToast } from "../components/ui/Toast.jsx";
+import AddressPicker from "../components/ui/AddressPicker.jsx";
 import {
   useConfirm,
   useNotify,
@@ -246,6 +247,17 @@ const ESTADO_OPCIONES = [
 const estadoLabel = (v) =>
   ESTADO_OPCIONES.find((o) => o.value === v)?.label || v || "—";
 
+// Abreviatura a partir del nombre (iniciales de palabras significativas).
+const _STOP_ABBR = new Set(["de", "del", "la", "las", "los", "el", "y", "en", "biohuerto", "huerto"]);
+function abbrevFromName(nombre) {
+  const norm = (nombre || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
+  let words = (norm.match(/[A-Za-z0-9]+/g) || []).filter((w) => !_STOP_ABBR.has(w.toLowerCase()));
+  if (!words.length) words = norm.match(/[A-Za-z0-9]+/g) || [];
+  if (!words.length) return "";
+  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
+  return words.slice(0, 4).map((w) => w[0]).join("").toUpperCase();
+}
+
 const EMPTY_FORM = {
   nombre: "",
   codigo: "",
@@ -260,6 +272,19 @@ const EMPTY_FORM = {
   imagen: "",
 };
 
+// Encabezado de paso numerado para guiar el registro.
+function Step({ n, title, hint }) {
+  return (
+    <div className="flex items-center gap-[10px]">
+      <span className="grid h-[26px] w-[26px] flex-shrink-0 place-items-center rounded-full bg-primary text-[13px] font-extrabold text-white">
+        {n}
+      </span>
+      <span className="text-[15.5px] font-extrabold text-text">{title}</span>
+      {hint && <span className="text-[12.5px] text-muted-2">· {hint}</span>}
+    </div>
+  );
+}
+
 function BiohuertoModal({ open, mode, row, onClose, onSave }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
@@ -267,6 +292,8 @@ function BiohuertoModal({ open, mode, row, onClose, onSave }) {
   const [nuevoTipo, setNuevoTipo] = useState(false);
   const [nuevoTipoNombre, setNuevoTipoNombre] = useState("");
   const [creandoTipo, setCreandoTipo] = useState(false);
+  // ¿el usuario editó código/abreviatura a mano? (para no pisar sus cambios)
+  const [touched, setTouched] = useState({ codigo: false, abreviatura: false });
 
   // Cargar catálogo de tipos de área al abrir el formulario.
   useEffect(() => {
@@ -290,6 +317,8 @@ function BiohuertoModal({ open, mode, row, onClose, onSave }) {
     if (!open) return;
     setNuevoTipo(false);
     setNuevoTipoNombre("");
+    // Al crear, el código/abreviatura arrancan en "auto"; al editar, se respetan los existentes.
+    setTouched({ codigo: mode === "edit", abreviatura: mode === "edit" });
     if (mode === "edit" && row) {
       setForm({
         nombre: row.nombre || "",
@@ -320,6 +349,29 @@ function BiohuertoModal({ open, mode, row, onClose, onSave }) {
   if (!open) return null;
   const view = mode === "view";
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  // Auto-sugerencia de código/abreviatura desde el nombre (solo al crear, y
+  // mientras el usuario no los haya editado a mano).
+  const onNombre = (e) => {
+    const nombre = e.target.value;
+    setForm((f) => {
+      const next = { ...f, nombre };
+      if (mode === "new") {
+        const abbr = abbrevFromName(nombre);
+        if (!touched.abreviatura) next.abreviatura = abbr;
+        if (!touched.codigo) next.codigo = abbr ? `${abbr}-001` : "";
+      }
+      return next;
+    });
+  };
+  const onCodigo = (e) => {
+    setTouched((t) => ({ ...t, codigo: true }));
+    setForm((f) => ({ ...f, codigo: e.target.value }));
+  };
+  const onAbreviatura = (e) => {
+    setTouched((t) => ({ ...t, abreviatura: true }));
+    setForm((f) => ({ ...f, abreviatura: e.target.value }));
+  };
 
   const crearTipoArea = async () => {
     const nombre = nuevoTipoNombre.trim();
@@ -372,7 +424,7 @@ function BiohuertoModal({ open, mode, row, onClose, onSave }) {
     <Modal
       open={open}
       onClose={onClose}
-      width={580}
+      width={mode === "view" ? 640 : 920}
       title={
         view
           ? row?.nombre
@@ -433,140 +485,119 @@ function BiohuertoModal({ open, mode, row, onClose, onSave }) {
           </div>
         </div>
       ) : (
-        <div className="grid gap-[18px]">
-          <Field label="Foto del biohuerto">
-            <ImageUpload
-              key={row?.id || "new"}
-              defaultUrl={row?.imagen || ""}
-              height={160}
-              onChange={(url) => setForm((f) => ({ ...f, imagen: url }))}
-            />
-          </Field>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Nombre">
-              <Input value={form.nombre} onChange={set("nombre")} placeholder="Ej: Loma Verde" />
+        <div className="grid gap-7 lg:grid-cols-[1fr_1.05fr]">
+          {/* IZQUIERDA · Identidad y datos */}
+          <div className="flex flex-col gap-[18px]">
+            <Step n="1" title="Datos del biohuerto" />
+            <Field label="Nombre del biohuerto" hint="Al escribirlo se sugieren el código y la abreviatura">
+              <Input value={form.nombre} onChange={onNombre} placeholder="Ej: Loma Verde" />
             </Field>
-            <Field label="Código">
-              <Input value={form.codigo} onChange={set("codigo")} placeholder="BV-0XX" />
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Tipo de área">
-              {nuevoTipo ? (
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={nuevoTipoNombre}
-                    onChange={(e) => setNuevoTipoNombre(e.target.value)}
-                    placeholder="Nombre del tipo"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        crearTipoArea();
-                      }
-                    }}
-                  />
-                  <Button
-                    size="sm"
-                    onClick={crearTipoArea}
-                    disabled={creandoTipo || !nuevoTipoNombre.trim()}
-                  >
-                    {creandoTipo ? "…" : "Guardar"}
-                  </Button>
-                  <IconBtn
-                    name="x"
-                    title="Cancelar"
-                    onClick={() => {
-                      setNuevoTipo(false);
-                      setNuevoTipoNombre("");
-                    }}
-                  />
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <Select
-                    value={form.tipo_area_id}
-                    onChange={set("tipo_area_id")}
-                    className="flex-1"
-                  >
-                    <option value="">Selecciona un tipo</option>
-                    {tiposArea.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.nombre}
-                      </option>
-                    ))}
-                  </Select>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon="plus"
-                    onClick={() => setNuevoTipo(true)}
-                  >
-                    Nuevo
-                  </Button>
-                </div>
-              )}
-            </Field>
-            <Field label="Estado">
-              <Select value={form.estado} onChange={set("estado")}>
-                {ESTADO_OPCIONES.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Abreviatura">
-              <Input
-                value={form.abreviatura}
-                onChange={set("abreviatura")}
-                placeholder="Ej: LV"
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Código" hint="Automático · editable">
+                <Input value={form.codigo} onChange={onCodigo} placeholder="LV-001" />
+              </Field>
+              <Field label="Abreviatura" hint="Automática · editable">
+                <Input value={form.abreviatura} onChange={onAbreviatura} placeholder="Ej: LV" />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Tipo de área">
+                {nuevoTipo ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={nuevoTipoNombre}
+                      onChange={(e) => setNuevoTipoNombre(e.target.value)}
+                      placeholder="Nombre del tipo"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          crearTipoArea();
+                        }
+                      }}
+                    />
+                    <Button size="sm" onClick={crearTipoArea} disabled={creandoTipo || !nuevoTipoNombre.trim()}>
+                      {creandoTipo ? "…" : "Guardar"}
+                    </Button>
+                    <IconBtn
+                      name="x"
+                      title="Cancelar"
+                      onClick={() => {
+                        setNuevoTipo(false);
+                        setNuevoTipoNombre("");
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Select value={form.tipo_area_id} onChange={set("tipo_area_id")} className="flex-1">
+                      <option value="">Selecciona un tipo</option>
+                      {tiposArea.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.nombre}
+                        </option>
+                      ))}
+                    </Select>
+                    <Button variant="secondary" size="sm" icon="plus" onClick={() => setNuevoTipo(true)}>
+                      Nuevo
+                    </Button>
+                  </div>
+                )}
+              </Field>
+              <Field label="Estado">
+                <Select value={form.estado} onChange={set("estado")}>
+                  {ESTADO_OPCIONES.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            <Field label="Foto del biohuerto (opcional)">
+              <ImageUpload
+                key={row?.id || "new"}
+                defaultUrl={row?.imagen || ""}
+                height={150}
+                onChange={(url) => setForm((f) => ({ ...f, imagen: url }))}
               />
             </Field>
+            <Field label="Descripción (opcional)">
+              <Textarea
+                value={form.descripcion}
+                onChange={set("descripcion")}
+                placeholder="Describe la unidad productiva…"
+              />
+            </Field>
+          </div>
+
+          {/* DERECHA · Ubicación y tamaño */}
+          <div className="flex flex-col gap-[18px]">
+            <Step n="2" title="Ubicación" hint="busca, dicta o toca el mapa" />
+            <div className="flex min-h-[380px] flex-1 flex-col">
+              <AddressPicker
+                label=""
+                value={form.ubicacion_referencia}
+                areaM2={form.area_m2}
+                initialCenter={
+                  row?.latitud != null && row?.longitud != null
+                    ? { lat: Number(row.latitud), lng: Number(row.longitud) }
+                    : null
+                }
+                onChange={(direccion, coords) =>
+                  setForm((f) => ({
+                    ...f,
+                    ubicacion_referencia: direccion,
+                    latitud: coords ? coords.lat : "",
+                    longitud: coords ? coords.lng : "",
+                  }))
+                }
+              />
+            </div>
+            <Step n="3" title="Área disponible" hint="se dibuja como un cuadro en el mapa" />
             <Field label="Área disponible (m²)">
-              <Input
-                type="number"
-                value={form.area_m2}
-                onChange={set("area_m2")}
-                placeholder="0"
-              />
+              <Input type="number" value={form.area_m2} onChange={set("area_m2")} placeholder="Ej: 200" />
             </Field>
           </div>
-          <Field label="Ubicación de referencia">
-            <Input
-              value={form.ubicacion_referencia}
-              onChange={set("ubicacion_referencia")}
-              placeholder="Distrito, sector o referencia"
-            />
-          </Field>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Latitud">
-              <Input
-                type="number"
-                step="0.000001"
-                value={form.latitud}
-                onChange={set("latitud")}
-                placeholder="Opcional"
-              />
-            </Field>
-            <Field label="Longitud">
-              <Input
-                type="number"
-                step="0.000001"
-                value={form.longitud}
-                onChange={set("longitud")}
-                placeholder="Opcional"
-              />
-            </Field>
-          </div>
-          <Field label="Descripción">
-            <Textarea
-              value={form.descripcion}
-              onChange={set("descripcion")}
-              placeholder="Describe la unidad productiva…"
-            />
-          </Field>
         </div>
       )}
     </Modal>

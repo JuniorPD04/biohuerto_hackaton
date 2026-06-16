@@ -5,6 +5,7 @@ import Icon from "../ui/Icon.jsx";
 import { Avatar } from "../ui/primitives.jsx";
 import { tintFor } from "../../lib/theme.js";
 import Sidebar from "./Sidebar.jsx";
+import logo from "../../assets/logo_biohuerto.jpeg";
 
 const ROL_LABEL = { admin: "Administrador", productor: "Productor", consumidor: "Consumidor" };
 
@@ -19,9 +20,11 @@ export default function AppShell() {
       <aside className="flex h-screen flex-col overflow-hidden bg-sb-bg">
         {/* Brand */}
         <div className="flex items-center gap-3 border-b border-white/10 px-[22px] pb-5 pt-6">
-          <span className="grid h-[42px] w-[42px] flex-shrink-0 place-items-center rounded-xl bg-sb-icon text-white">
-            <Icon name="sprout" size={24} stroke={2} />
-          </span>
+          <img
+            src={logo}
+            alt="Biohuerto"
+            className="h-[42px] w-[42px] flex-shrink-0 rounded-xl object-cover"
+          />
           <div>
             <div className="text-xl font-extrabold leading-none text-white">Biohuerto</div>
             <div className="mt-1 text-[12.5px] font-semibold text-white/[.46]">Gestión sostenible</div>

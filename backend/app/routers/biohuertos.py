@@ -1,3 +1,6 @@
+import re
+import unicodedata
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -11,6 +14,49 @@ from app.schemas.users import CurrentUser
 from app.services.attachments import set_principal_image
 
 router = APIRouter(prefix="/api/biohuertos", tags=["biohuertos"])
+
+# Palabras que no aportan a la abreviatura/código del biohuerto.
+_CODIGO_STOP = {"de", "del", "la", "las", "los", "el", "y", "en", "biohuerto", "huerto"}
+
+
+def _abreviatura(nombre: str) -> str:
+    """Abreviatura a partir del nombre: iniciales de las palabras significativas.
+
+    'Loma Verde' → 'LV';  'Huerto Chiclayo Norte' → 'CN';  'Esperanza' → 'ESP'.
+    """
+    norm = unicodedata.normalize("NFKD", nombre or "").encode("ascii", "ignore").decode()
+    palabras = [w for w in re.findall(r"[A-Za-z0-9]+", norm) if w.lower() not in _CODIGO_STOP]
+    if not palabras:
+        palabras = re.findall(r"[A-Za-z0-9]+", norm)
+    if not palabras:
+        return "BH"
+    if len(palabras) == 1:
+        return palabras[0][:3].upper()
+    return "".join(w[0] for w in palabras[:4]).upper()
+
+
+async def _codigo_unico(session: AsyncSession, abbr: str, preferido: str | None) -> str:
+    """Devuelve un código libre. Respeta el preferido si está disponible;
+    si no, usa el prefijo (del preferido o la abreviatura) + siguiente número."""
+    if preferido:
+        taken = await session.execute(
+            text("select 1 from biohuertos where lower(codigo) = lower(:c)"),
+            {"c": preferido},
+        )
+        if taken.first() is None:
+            return preferido
+        m = re.match(r"^(.*?)-?\d*$", preferido)
+        prefix = (m.group(1) if m and m.group(1) else abbr).upper()
+    else:
+        prefix = abbr
+    rows = await session.execute(
+        text("select codigo from biohuertos where codigo like :p"), {"p": f"{prefix}-%"}
+    )
+    usados = {int(mm.group(1)) for (c,) in rows.all() if (mm := re.search(r"-(\d+)$", c or ""))}
+    n = 1
+    while n in usados:
+        n += 1
+    return f"{prefix}-{n:03d}"
 
 # ubicacion_referencia se descifra en SQL con pgp_sym_decrypt.
 _BIOHUERTO_SELECT = """
@@ -66,49 +112,60 @@ async def create_biohuerto(
     current_user: CurrentUser = Depends(require_role("productor", "admin")),
     session: AsyncSession = Depends(get_session),
 ) -> BiohuertoOut:
-    existing = await session.execute(
-        text("select id from biohuertos where lower(codigo) = lower(:codigo) and deleted_at is null"),
-        {"codigo": payload.codigo},
-    )
-    if existing.scalar_one_or_none() is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El codigo de biohuerto ya existe")
-
+    # Código y abreviatura se derivan del nombre si no vienen; el código se
+    # garantiza único (respeta el preferido si está libre, si no, lo numera).
     enc_key = get_settings().pgcrypto_key
-    result = await session.execute(
-        text(
-            """
-            insert into biohuertos
-                (tipo_area_id, nombre, codigo, abreviatura,
-                 ubicacion_referencia_encrypted, latitud, longitud, area_m2,
-                 descripcion, estado)
-            values (
-                coalesce(:tipo_area_id, (select id from tipos_area where codigo = 'biohuerto')),
-                :nombre, :codigo, :abreviatura,
-                case when cast(:ubicacion as text) is null then null
-                     else pgp_sym_encrypt(cast(:ubicacion as text), cast(:enc_key as text)) end,
-                :latitud, :longitud, :area_m2,
-                :descripcion, coalesce(:estado, 'nuevo')
-            )
-            returning id
-            """
-        ),
-        {
-            "tipo_area_id": payload.tipo_area_id,
-            "nombre": payload.nombre,
-            "codigo": payload.codigo.upper(),
-            "abreviatura": payload.abreviatura,
-            "ubicacion": payload.ubicacion_referencia,
-            "latitud": payload.latitud,
-            "longitud": payload.longitud,
-            "area_m2": payload.area_m2,
-            "descripcion": payload.descripcion,
-            "estado": payload.estado,
-            "enc_key": enc_key,
-        },
+    abbr = _abreviatura(payload.nombre)
+    abreviatura = (payload.abreviatura or abbr)[:20]
+    preferido = payload.codigo.upper() if payload.codigo else None
+
+    insert_sql = text(
+        """
+        insert into biohuertos
+            (tipo_area_id, nombre, codigo, abreviatura,
+             ubicacion_referencia_encrypted, latitud, longitud, area_m2,
+             descripcion, estado)
+        values (
+            coalesce(:tipo_area_id, (select id from tipos_area where codigo = 'biohuerto')),
+            :nombre, :codigo, :abreviatura,
+            case when cast(:ubicacion as text) is null then null
+                 else pgp_sym_encrypt(cast(:ubicacion as text), cast(:enc_key as text)) end,
+            :latitud, :longitud, :area_m2,
+            :descripcion, coalesce(:estado, 'nuevo')
+        )
+        returning id
+        """
     )
-    new_id = str(result.scalar_one())
-    await set_principal_image(session, column="biohuerto_id", entity_id=new_id, data_url=payload.imagen)
-    await session.commit()
+    base = {
+        "tipo_area_id": payload.tipo_area_id,
+        "nombre": payload.nombre,
+        "abreviatura": abreviatura,
+        "ubicacion": payload.ubicacion_referencia,
+        "latitud": payload.latitud,
+        "longitud": payload.longitud,
+        "area_m2": payload.area_m2,
+        "descripcion": payload.descripcion,
+        "estado": payload.estado,
+        "enc_key": enc_key,
+    }
+
+    new_id = None
+    for _ in range(5):
+        codigo = await _codigo_unico(session, abbr, preferido)
+        try:
+            result = await session.execute(insert_sql, {**base, "codigo": codigo})
+            new_id = str(result.scalar_one())
+            await set_principal_image(
+                session, column="biohuerto_id", entity_id=new_id, data_url=payload.imagen
+            )
+            await session.commit()
+            break
+        except IntegrityError:
+            await session.rollback()
+            preferido = None  # tras un choque (carrera), pasa a numeración automática
+            continue
+    if new_id is None:
+        raise HTTPException(status_code=500, detail="No se pudo generar un código único")
     return await _get_one(session, new_id)
 
 
