@@ -14,7 +14,7 @@ from app.schemas.users import CurrentUser
 router = APIRouter(prefix="/api/campanias", tags=["campanias"])
 
 _SELECT = """
-    select c.id, c.nombre, c.fecha_inicio, c.fecha_fin, c.activa,
+    select c.id, c.nombre, c.fecha_inicio, c.fecha_fin, c.is_active,
            c.created_at, c.updated_at,
            (select count(*) from cultivos cu
              where cu.campania_id = c.id and cu.deleted_at is null) as cultivos_count
@@ -26,7 +26,7 @@ class CampaniaBase(BaseModel):
     nombre: str | None = Field(default=None, min_length=2, max_length=120)
     fecha_inicio: date | None = None
     fecha_fin: date | None = None
-    activa: bool | None = None
+    is_active: bool | None = None
 
     @model_validator(mode="after")
     def _check_fechas(self):
@@ -39,7 +39,7 @@ class CampaniaCreate(CampaniaBase):
     nombre: str = Field(min_length=2, max_length=120)
     fecha_inicio: date
     fecha_fin: date
-    activa: bool = False
+    is_active: bool = False
 
 
 class CampaniaOut(BaseModel):
@@ -47,7 +47,7 @@ class CampaniaOut(BaseModel):
     nombre: str
     fecha_inicio: date
     fecha_fin: date
-    activa: bool
+    is_active: bool
     cultivos_count: int = 0
     created_at: datetime
     updated_at: datetime
@@ -85,8 +85,8 @@ async def create_campania(
         result = await session.execute(
             text(
                 """
-                insert into campanias (nombre, fecha_inicio, fecha_fin, activa)
-                values (:nombre, :fecha_inicio, :fecha_fin, :activa)
+                insert into campanias (nombre, fecha_inicio, fecha_fin, is_active)
+                values (:nombre, :fecha_inicio, :fecha_fin, :is_active)
                 returning id
                 """
             ),

@@ -22,7 +22,7 @@ class CuidadoUpdate(BaseModel):
     tipo: str | None = Field(default=None, min_length=2, max_length=80)
     descripcion: str | None = Field(default=None, max_length=200)
     frecuencia_dias: int | None = Field(default=None, gt=0, le=365)
-    activo: bool | None = None
+    is_active: bool | None = None
 
     @field_validator("tipo", "descripcion", mode="before")
     @classmethod
@@ -39,7 +39,7 @@ class CuidadoOut(BaseModel):
     ultima_realizada: datetime | None = None
     proxima_fecha: datetime | None = None
     vencido: bool = False
-    activo: bool
+    is_active: bool
     cultivo: str | None = None
     biohuerto: str | None = None
     biohuerto_id: str | None = None

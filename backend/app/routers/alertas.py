@@ -35,7 +35,7 @@ def _to_alerta_out(row) -> AlertaOut:
 
 
 async def _generate_cuidado_alerts(session: AsyncSession, current_user: CurrentUser) -> None:
-    filters = ["c.activo", "c.deleted_at is null"]
+    filters = ["c.is_active", "c.deleted_at is null"]
     params: dict = {}
     if current_user.rol != "admin":
         filters.append("cu.usuario_id = :usuario_id")

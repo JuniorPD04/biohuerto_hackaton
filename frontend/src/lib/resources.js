@@ -119,6 +119,22 @@ export const catalogosApi = {
   create: (catalogo, body) => unwrap(api.post(`/api/catalogos/${catalogo}`, body)),
 };
 
+// Entidades fuente (catálogos maestros): rail + CRUD admin
+export const entidadesApi = {
+  meta: () => unwrap(api.get("/api/entidades")),
+  list: (key) => unwrap(api.get(`/api/entidades/${key}`)),
+  create: (key, body) => unwrap(api.post(`/api/entidades/${key}`, body)),
+  update: (key, id, body) => unwrap(api.patch(`/api/entidades/${key}/${id}`, body)),
+  remove: (key, id) => api.delete(`/api/entidades/${key}/${id}`),
+};
+
+// Control de acceso por rol (matriz de permisos vista × acción)
+export const accesoApi = {
+  matriz: () => unwrap(api.get("/api/acceso/matriz")),
+  setPermisos: (rolId, permisos) =>
+    unwrap(api.put(`/api/acceso/roles/${rolId}/permisos`, { permisos })),
+};
+
 export const campaniasApi = {
   list: () => unwrap(api.get("/api/campanias")),
   create: (body) => unwrap(api.post("/api/campanias", body)),

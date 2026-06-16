@@ -108,11 +108,12 @@ async def _sync_monitoreo(
         text(
             """
             insert into monitoreo_registros (
-              id, cultivo_id, fuente, usuario_id, humedad_pct, temperatura_c,
+              id, cultivo_id, fuente_id, usuario_id, humedad_pct, temperatura_c,
               luminosidad_lux, ph_suelo, observacion, registrado_en, is_synced, last_synced_at
             )
             values (
-              :id, :cultivo_id, 'manual', :usuario_id, :humedad_pct, :temperatura_c,
+              :id, :cultivo_id, (select id from fuentes_monitoreo where codigo = 'manual'),
+              :usuario_id, :humedad_pct, :temperatura_c,
               :luminosidad_lux, :ph_suelo, :observacion, :registrado_en, true, now()
             )
             on conflict (id) do update set

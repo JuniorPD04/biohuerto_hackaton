@@ -83,24 +83,23 @@ INSERT INTO etapas_fenologicas(codigo, nombre, orden, color_bg, color_fg) VALUES
 --  un usuario con "Agregar nuevo" (creado_por_id indica quién).
 CREATE TABLE especies (
   id                SMALLSERIAL  PRIMARY KEY,
-  codigo            VARCHAR(40)  NOT NULL UNIQUE,
   nombre            VARCHAR(120) NOT NULL UNIQUE,
   nombre_cientifico VARCHAR(160) NULL,
   es_sistema        BOOLEAN      NOT NULL DEFAULT FALSE,
   creado_por_id     BIGINT       NULL,    -- FK diferida → usuarios (BLOQUE 2)
-  activo            BOOLEAN      NOT NULL DEFAULT TRUE
+  is_active         BOOLEAN      NOT NULL DEFAULT TRUE
 );
-INSERT INTO especies(codigo, nombre, nombre_cientifico, es_sistema) VALUES
-  ('lechuga',      'Lechuga',       'Lactuca sativa',        TRUE),
-  ('tomate',       'Tomate',        'Solanum lycopersicum',  TRUE),
-  ('fresa',        'Fresa',         'Fragaria × ananassa',   TRUE),
-  ('culantro',     'Culantro',      'Coriandrum sativum',    TRUE),
-  ('espinaca',     'Espinaca',      'Spinacia oleracea',     TRUE),
-  ('rabanito',     'Rabanito',      'Raphanus sativus',      TRUE),
-  ('zanahoria',    'Zanahoria',     'Daucus carota',         TRUE),
-  ('cebolla_china','Cebolla china', 'Allium fistulosum',     TRUE),
-  ('aji',          'Ají',           'Capsicum baccatum',     TRUE),
-  ('otro',         'Otro',          NULL,                    TRUE);
+INSERT INTO especies(nombre, nombre_cientifico, es_sistema) VALUES
+  ('Lechuga',       'Lactuca sativa',        TRUE),
+  ('Tomate',        'Solanum lycopersicum',  TRUE),
+  ('Fresa',         'Fragaria × ananassa',   TRUE),
+  ('Culantro',      'Coriandrum sativum',    TRUE),
+  ('Espinaca',      'Spinacia oleracea',     TRUE),
+  ('Rabanito',      'Raphanus sativus',      TRUE),
+  ('Zanahoria',     'Daucus carota',         TRUE),
+  ('Cebolla china', 'Allium fistulosum',     TRUE),
+  ('Ají',           'Capsicum baccatum',     TRUE),
+  ('Otro',          NULL,                    TRUE);
 
 -- 1.2c  Fenología estandarizada por especie
 --  Duración esperada (min/max días) de cada ETAPA para cada ESPECIE.
@@ -118,7 +117,7 @@ CREATE TABLE especie_etapas (
 --   INSERT INTO especie_etapas(especie_id, etapa_id, min_dias, max_dias)
 --   SELECT e.id, f.id, 5, 10
 --   FROM especies e, etapas_fenologicas f
---   WHERE e.codigo = 'fresa' AND f.codigo = 'fructificacion';
+--   WHERE e.nombre = 'Fresa' AND f.codigo = 'fructificacion';
 
 -- 1.3  Campañas / temporadas
 CREATE TABLE campanias (
@@ -126,7 +125,7 @@ CREATE TABLE campanias (
   nombre       VARCHAR(120) NOT NULL UNIQUE,
   fecha_inicio DATE         NOT NULL,
   fecha_fin    DATE         NOT NULL,
-  activa       BOOLEAN      NOT NULL DEFAULT FALSE,
+  is_active    BOOLEAN      NOT NULL DEFAULT FALSE,
   created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
   deleted_at   TIMESTAMPTZ  NULL,
@@ -211,7 +210,7 @@ CREATE TABLE unidades (
   nombre        VARCHAR(60)  NOT NULL,
   es_sistema    BOOLEAN      NOT NULL DEFAULT FALSE,
   creado_por_id BIGINT       NULL,    -- FK diferida → usuarios (BLOQUE 2)
-  activo        BOOLEAN      NOT NULL DEFAULT TRUE
+  is_active     BOOLEAN      NOT NULL DEFAULT TRUE
 );
 INSERT INTO unidades(codigo, nombre, es_sistema) VALUES
   ('und',    'Unidad',         TRUE),
@@ -229,41 +228,27 @@ INSERT INTO unidades(codigo, nombre, es_sistema) VALUES
 -- 1.10  Insumos (catálogo extensible: "Agregar nuevo")
 CREATE TABLE insumos (
   id            SMALLSERIAL  PRIMARY KEY,
-  codigo        VARCHAR(40)  NOT NULL UNIQUE,
   nombre        VARCHAR(120) NOT NULL,
   es_sistema    BOOLEAN      NOT NULL DEFAULT FALSE,
   creado_por_id BIGINT       NULL,    -- FK diferida → usuarios (BLOQUE 2)
-  activo        BOOLEAN      NOT NULL DEFAULT TRUE
+  is_active     BOOLEAN      NOT NULL DEFAULT TRUE
 );
-INSERT INTO insumos(codigo, nombre, es_sistema) VALUES
-  ('compost',        'Compost',          TRUE),
-  ('humus',          'Humus de lombriz', TRUE),
-  ('biol',           'Biol',             TRUE),
-  ('ceniza',         'Ceniza',           TRUE),
-  ('jabon_potasico', 'Jabón potásico',   TRUE),
-  ('caldo_bordeles', 'Caldo bordelés',   TRUE),
-  ('cal_agricola',   'Cal agrícola',     TRUE),
-  ('estiercol',      'Estiércol',        TRUE),
-  ('abono_verde',    'Abono verde',      TRUE),
-  ('agua',           'Agua',             TRUE);
+INSERT INTO insumos(nombre, es_sistema) VALUES
+  ('Compost', TRUE), ('Humus de lombriz', TRUE), ('Biol', TRUE), ('Ceniza', TRUE),
+  ('Jabón potásico', TRUE), ('Caldo bordelés', TRUE), ('Cal agrícola', TRUE),
+  ('Estiércol', TRUE), ('Abono verde', TRUE), ('Agua', TRUE);
 
 -- 1.11  Zonas de la planta (catálogo extensible) — para incidencias
 CREATE TABLE zonas_planta (
   id            SMALLSERIAL  PRIMARY KEY,
-  codigo        VARCHAR(40)  NOT NULL UNIQUE,
   nombre        VARCHAR(80)  NOT NULL,
   es_sistema    BOOLEAN      NOT NULL DEFAULT FALSE,
   creado_por_id BIGINT       NULL,    -- FK diferida → usuarios (BLOQUE 2)
-  activo        BOOLEAN      NOT NULL DEFAULT TRUE
+  is_active     BOOLEAN      NOT NULL DEFAULT TRUE
 );
-INSERT INTO zonas_planta(codigo, nombre, es_sistema) VALUES
-  ('hoja',            'Hoja',            TRUE),
-  ('tallo',           'Tallo',           TRUE),
-  ('raiz',            'Raíz',            TRUE),
-  ('fruto',           'Fruto',           TRUE),
-  ('flor',            'Flor',            TRUE),
-  ('planta_completa', 'Planta completa', TRUE),
-  ('otro',            'Otro',            TRUE);
+INSERT INTO zonas_planta(nombre, es_sistema) VALUES
+  ('Hoja', TRUE), ('Tallo', TRUE), ('Raíz', TRUE), ('Fruto', TRUE),
+  ('Flor', TRUE), ('Planta completa', TRUE), ('Otro', TRUE);
 
 -- 1.12  Tipos de área de sembrío (catálogo extensible) — escalabilidad
 --  El docente: por defecto 'biohuerto', pero el admin puede ampliar a
@@ -274,7 +259,7 @@ CREATE TABLE tipos_area (
   nombre        VARCHAR(80)  NOT NULL,
   es_sistema    BOOLEAN      NOT NULL DEFAULT FALSE,
   creado_por_id BIGINT       NULL,    -- FK diferida → usuarios (BLOQUE 2)
-  activo        BOOLEAN      NOT NULL DEFAULT TRUE
+  is_active     BOOLEAN      NOT NULL DEFAULT TRUE
 );
 INSERT INTO tipos_area(codigo, nombre, es_sistema) VALUES
   ('biohuerto',       'Biohuerto',       TRUE),
@@ -283,6 +268,16 @@ INSERT INTO tipos_area(codigo, nombre, es_sistema) VALUES
   ('invernadero',     'Invernadero',     TRUE),
   ('hectarea',        'Hectárea',        TRUE),
   ('otro',            'Otro',            TRUE);
+
+-- 1.13  Fuentes de monitoreo (catálogo) — normaliza el origen del registro
+CREATE TABLE fuentes_monitoreo (
+  id     SMALLSERIAL PRIMARY KEY,
+  codigo VARCHAR(20)  NOT NULL UNIQUE,
+  nombre VARCHAR(60)  NOT NULL
+);
+INSERT INTO fuentes_monitoreo(codigo, nombre) VALUES
+  ('iot',    'IoT'),
+  ('manual', 'Manual');
 
 -- ============================================================
 --  BLOQUE 2 · USUARIOS Y BIOHUERTOS
@@ -311,17 +306,7 @@ ALTER TABLE insumos      ADD CONSTRAINT fk_insumos_creador   FOREIGN KEY (creado
 ALTER TABLE zonas_planta ADD CONSTRAINT fk_zonas_creador     FOREIGN KEY (creado_por_id) REFERENCES usuarios(id) ON DELETE SET NULL;
 ALTER TABLE tipos_area   ADD CONSTRAINT fk_tipos_area_creador FOREIGN KEY (creado_por_id) REFERENCES usuarios(id) ON DELETE SET NULL;
 
--- 2.2  Detalle de consumidores (extiende usuarios con rol=consumidor)
---  tipo_consumidor depende del rol, no del usuario genérico → tabla propia (3FN)
-CREATE TABLE consumidores_detalle (
-  usuario_id      BIGINT      PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
-  tipo_consumidor VARCHAR(40) NOT NULL
-                  CHECK (tipo_consumidor IN ('Mayorista','Minorista','Familiar','Horeca','Otro')),
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- 2.3  Biohuertos
+-- 2.2  Biohuertos
 CREATE TABLE biohuertos (
   id             UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),  -- UUID: creable offline en campo
   tipo_area_id   SMALLINT      NOT NULL REFERENCES tipos_area(id),      -- biohuerto/parcela/… (por defecto 'biohuerto')
@@ -354,7 +339,7 @@ CREATE TABLE biohuerto_propietarios (
   rol              VARCHAR(20)  NOT NULL DEFAULT 'propietario'
                    CHECK (rol IN ('propietario','administrador')),
   fecha_asignacion DATE         NOT NULL DEFAULT CURRENT_DATE,
-  activo           BOOLEAN      NOT NULL DEFAULT TRUE,
+  is_active        BOOLEAN      NOT NULL DEFAULT TRUE,
   last_synced_at   TIMESTAMPTZ  NULL,
   is_synced        BOOLEAN      NOT NULL DEFAULT TRUE,
   created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -463,7 +448,7 @@ CREATE TABLE cultivo_asignaciones (
   rol_en_cultivo   VARCHAR(40)  NOT NULL DEFAULT 'responsable'
                    CHECK (rol_en_cultivo IN ('responsable','apoyo','observador')),
   fecha_asignacion DATE         NOT NULL DEFAULT CURRENT_DATE,
-  activo           BOOLEAN      NOT NULL DEFAULT TRUE,
+  is_active        BOOLEAN      NOT NULL DEFAULT TRUE,
   last_synced_at   TIMESTAMPTZ  NULL,
   is_synced        BOOLEAN      NOT NULL DEFAULT TRUE,
   created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -476,15 +461,13 @@ CREATE TABLE cultivo_asignaciones (
 --  BLOQUE 5 · MONITOREO E INCIDENCIAS
 -- ============================================================
 
--- 5.1  Fuente de monitoreo como ENUM (solo 2 valores fijos permanentes)
-CREATE TYPE fuente_monitoreo_enum AS ENUM ('iot', 'manual');
-
--- 5.2  Registros de monitoreo de variables ambientales
+-- 5.1  Registros de monitoreo de variables ambientales
+--  fuente normalizada con el catálogo fuentes_monitoreo (BLOQUE 1.13).
 --  luminosidad_nivel eliminada: derivada de luminosidad_lux → viola 3FN
 CREATE TABLE monitoreo_registros (
   id              UUID                  PRIMARY KEY DEFAULT uuid_generate_v4(),
   cultivo_id      UUID                  NOT NULL REFERENCES cultivos(id) ON DELETE CASCADE,
-  fuente          fuente_monitoreo_enum NOT NULL,
+  fuente_id       SMALLINT              NOT NULL REFERENCES fuentes_monitoreo(id),
   usuario_id      BIGINT                NULL REFERENCES usuarios(id) ON DELETE SET NULL,
   sensor_codigo   VARCHAR(40)           NULL,
   registrado_en   TIMESTAMPTZ           NOT NULL DEFAULT now(),
@@ -700,7 +683,7 @@ CREATE TABLE cuidados (
   descripcion      VARCHAR(200) NULL,
   frecuencia_dias  SMALLINT     NOT NULL CHECK (frecuencia_dias > 0),
   ultima_realizada TIMESTAMPTZ  NULL,
-  activo           BOOLEAN      NOT NULL DEFAULT TRUE,
+  is_active        BOOLEAN      NOT NULL DEFAULT TRUE,
   last_synced_at   TIMESTAMPTZ  NULL,
   is_synced        BOOLEAN      NOT NULL DEFAULT TRUE,
   created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -769,42 +752,35 @@ CREATE TABLE cosechas_intereses (
 --  Los resultados parciales SÍ se guardan: snapshot justificado para
 --  reproducibilidad histórica cuando los factores cambien.
 CREATE TABLE huella_carbono (
-  id                            BIGSERIAL     PRIMARY KEY,
-  cultivo_id                    UUID          NOT NULL REFERENCES cultivos(id)  ON DELETE CASCADE,
-  usuario_id                    BIGINT        NULL REFERENCES usuarios(id)      ON DELETE SET NULL,
-  periodo_inicio                DATE          NOT NULL,
-  periodo_fin                   DATE          NOT NULL,
-  -- Inputs (valores fijados al momento del cálculo)
-  agua_m3                       NUMERIC(10,3) NOT NULL DEFAULT 0,
-  compost_kg                    NUMERIC(10,2) NOT NULL DEFAULT 0,
-  abono_verde_kg                NUMERIC(10,2) NOT NULL DEFAULT 0,
-  area_sin_agroquimicos_m2      NUMERIC(10,2) NOT NULL DEFAULT 0,
-  aplicaciones_control_bio      INTEGER       NOT NULL DEFAULT 0,
-  -- FKs a factores vigentes al momento del cálculo (para auditoría)
-  factor_agua_id                SMALLINT      NOT NULL REFERENCES factores_carbono(id),
-  factor_compost_id             SMALLINT      NOT NULL REFERENCES factores_carbono(id),
-  factor_abono_verde_id         SMALLINT      NOT NULL REFERENCES factores_carbono(id),
-  factor_sin_agroquim_id        SMALLINT      NOT NULL REFERENCES factores_carbono(id),
-  factor_ctrl_bio_id            SMALLINT      NOT NULL REFERENCES factores_carbono(id),
-  -- Resultados parciales (snapshot: desnormalización justificada)
-  emision_agua_kg_co2           NUMERIC(10,4) NOT NULL DEFAULT 0,
-  reduccion_compost_kg_co2      NUMERIC(10,4) NOT NULL DEFAULT 0,
-  reduccion_abono_verde_kg_co2  NUMERIC(10,4) NOT NULL DEFAULT 0,
-  reduccion_sin_agroquim_kg_co2 NUMERIC(10,4) NOT NULL DEFAULT 0,
-  reduccion_ctrl_bio_kg_co2     NUMERIC(10,4) NOT NULL DEFAULT 0,
-  huella_neta_kg_co2            NUMERIC(10,4) NOT NULL DEFAULT 0,
-  semaforo_ambiental            VARCHAR(10)   NOT NULL DEFAULT 'verde'
-                                CHECK (semaforo_ambiental IN ('verde','amarillo','rojo')),
-  created_at                    TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  updated_at                    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  id                  BIGSERIAL     PRIMARY KEY,
+  cultivo_id          UUID          NOT NULL REFERENCES cultivos(id)  ON DELETE CASCADE,
+  usuario_id          BIGINT        NULL REFERENCES usuarios(id)      ON DELETE SET NULL,
+  periodo_inicio      DATE          NOT NULL,
+  periodo_fin         DATE          NOT NULL,
+  huella_neta_kg_co2  NUMERIC(10,4) NOT NULL DEFAULT 0,
+  semaforo_ambiental  VARCHAR(10)   NOT NULL DEFAULT 'verde'
+                      CHECK (semaforo_ambiental IN ('verde','amarillo','rojo')),
+  created_at          TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ   NOT NULL DEFAULT now(),
   CHECK (periodo_fin >= periodo_inicio)
 );
 COMMENT ON TABLE huella_carbono IS
-  'Snapshot de cálculo de huella por cultivo y período.
-   semaforo_ambiental se determina en app consultando:
-   COUNT(incidencias WHERE severidad=alta AND estado!=cerrada),
-   MAX(monitoreo_registros.registrado_en),
-   COUNT(practicas JOIN categorias WHERE sin_agroquimicos=FALSE).';
+  'Cabecera del cálculo de huella por cultivo y período. El desglose por
+   componente (entrada + factor usado + resultado) va en huella_componentes.';
+
+-- 12.1  Componentes del cálculo de huella (un registro por componente)
+--  Normaliza el grupo repetido entrada+factor+resultado × 5 componentes.
+--  factor_id es la ÚNICA referencia a factores_carbono (relación 1:N limpia).
+CREATE TABLE huella_componentes (
+  id               BIGSERIAL     PRIMARY KEY,
+  huella_id        BIGINT        NOT NULL REFERENCES huella_carbono(id) ON DELETE CASCADE,
+  tipo             VARCHAR(20)   NOT NULL
+                   CHECK (tipo IN ('agua','compost','abono_verde','sin_agroquim','ctrl_bio')),
+  cantidad         NUMERIC(10,3) NOT NULL DEFAULT 0,   -- entrada: m³, kg, m², aplicaciones
+  factor_id        SMALLINT      NOT NULL REFERENCES factores_carbono(id),
+  resultado_kg_co2 NUMERIC(10,4) NOT NULL DEFAULT 0,   -- emisión o reducción del componente
+  UNIQUE (huella_id, tipo)
+);
 
 -- ============================================================
 --  BLOQUE 13 · SINCRONIZACIÓN OFFLINE
@@ -859,7 +835,7 @@ CREATE TABLE vistas (
   nombre      VARCHAR(120) NOT NULL,
   modulo      VARCHAR(60)  NULL,
   descripcion VARCHAR(200) NULL,
-  activo      BOOLEAN      NOT NULL DEFAULT TRUE
+  is_active   BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
 -- 14.2  Acciones posibles sobre una vista
@@ -951,7 +927,7 @@ CREATE INDEX idx_asignaciones_productor ON cultivo_asignaciones(productor_id);
 CREATE INDEX idx_especie_etapas_especie ON especie_etapas(especie_id);
 CREATE INDEX idx_monitoreo_cultivo    ON monitoreo_registros(cultivo_id);
 CREATE INDEX idx_monitoreo_fecha      ON monitoreo_registros(registrado_en DESC);
-CREATE INDEX idx_monitoreo_fuente     ON monitoreo_registros(fuente);
+CREATE INDEX idx_monitoreo_fuente     ON monitoreo_registros(fuente_id);
 CREATE INDEX idx_incidencias_cultivo  ON incidencias(cultivo_id);
 CREATE INDEX idx_incidencias_tipo     ON incidencias(tipo_id);
 CREATE INDEX idx_incidencias_estado   ON incidencias(estado);
@@ -980,6 +956,8 @@ CREATE INDEX idx_intereses_cosecha    ON cosechas_intereses(cosecha_id);
 CREATE INDEX idx_intereses_consumidor ON cosechas_intereses(consumidor_id);
 CREATE INDEX idx_huella_cultivo       ON huella_carbono(cultivo_id);
 CREATE INDEX idx_huella_periodo       ON huella_carbono(periodo_inicio, periodo_fin);
+CREATE INDEX idx_huella_comp_huella   ON huella_componentes(huella_id);
+CREATE INDEX idx_huella_comp_factor   ON huella_componentes(factor_id);
 -- Índices para archivos_adjuntos por cada FK
 CREATE INDEX idx_adj_biohuerto        ON archivos_adjuntos(biohuerto_id)   WHERE biohuerto_id   IS NOT NULL;
 CREATE INDEX idx_adj_cultivo          ON archivos_adjuntos(cultivo_id)     WHERE cultivo_id     IS NOT NULL;
@@ -1013,7 +991,6 @@ CREATE INDEX idx_sync_queue_tabla     ON sync_queue(tabla);
 -- ============================================================
 CREATE TRIGGER trg_campanias_upd      BEFORE UPDATE ON campanias             FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_usuarios_upd       BEFORE UPDATE ON usuarios              FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-CREATE TRIGGER trg_consumidores_upd   BEFORE UPDATE ON consumidores_detalle  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_biohuertos_upd     BEFORE UPDATE ON biohuertos            FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_cultivos_upd       BEFORE UPDATE ON cultivos              FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_asignaciones_upd   BEFORE UPDATE ON cultivo_asignaciones  FOR EACH ROW EXECUTE FUNCTION set_updated_at();

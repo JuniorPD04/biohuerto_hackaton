@@ -30,16 +30,19 @@ _READONLY: dict[str, str] = {
     ),
     "categorias-costo": "select id, nombre from categorias_costo order by nombre",
     "tipos-alerta": "select id, nombre from tipos_alerta order by nombre",
+    "fuentes-monitoreo": "select id, codigo, nombre from fuentes_monitoreo order by id",
     "roles": "select id, codigo, descripcion from roles order by id",
 }
 
-# Catálogos extensibles: (tabla, columnas_extra_para_select)
+# Catálogos extensibles: (tabla, extra, codigo=tiene columna codigo)
+#  especies/insumos/zonas se relacionan solo por id → sin codigo.
+#  unidades/tipos_area conservan codigo (el backend usa defaults 'und'/'biohuerto').
 _EXTENSIBLE: dict[str, dict] = {
-    "especies": {"tabla": "especies", "extra": "nombre_cientifico"},
-    "unidades": {"tabla": "unidades", "extra": None},
-    "insumos": {"tabla": "insumos", "extra": None},
-    "zonas-planta": {"tabla": "zonas_planta", "extra": None},
-    "tipos-area": {"tabla": "tipos_area", "extra": None},
+    "especies": {"tabla": "especies", "extra": "nombre_cientifico", "codigo": False},
+    "unidades": {"tabla": "unidades", "extra": None, "codigo": True},
+    "insumos": {"tabla": "insumos", "extra": None, "codigo": False},
+    "zonas-planta": {"tabla": "zonas_planta", "extra": None, "codigo": False},
+    "tipos-area": {"tabla": "tipos_area", "extra": None, "codigo": True},
 }
 
 
@@ -65,11 +68,10 @@ async def list_catalogo(
         query = _READONLY[catalogo]
     elif catalogo in _EXTENSIBLE:
         cfg = _EXTENSIBLE[catalogo]
-        extra = f", {cfg['extra']}" if cfg["extra"] else ""
-        query = (
-            f"select id, codigo, nombre{extra}, es_sistema, activo "
-            f"from {cfg['tabla']} where activo order by es_sistema desc, nombre"
-        )
+        cols = "id" + (", codigo" if cfg["codigo"] else "") + ", nombre"
+        cols += f", {cfg['extra']}" if cfg["extra"] else ""
+        cols += ", es_sistema, is_active"
+        query = f"select {cols} from {cfg['tabla']} where is_active order by es_sistema desc, nombre"
     else:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Catálogo no encontrado")
     result = await session.execute(text(query))
@@ -91,26 +93,25 @@ async def create_catalogo_item(
         )
     cfg = _EXTENSIBLE[catalogo]
     tabla = cfg["tabla"]
-    codigo = (payload.codigo or _slug(payload.nombre)).lower()
-    params = {
-        "codigo": codigo,
-        "nombre": payload.nombre.strip(),
-        "creado_por": current_user.id,
-    }
-    cols = "codigo, nombre, es_sistema, creado_por_id"
-    vals = ":codigo, :nombre, false, :creado_por"
-    extra_sel = ""
+    params = {"nombre": payload.nombre.strip(), "creado_por": current_user.id}
+    cols = "nombre, es_sistema, creado_por_id"
+    vals = ":nombre, false, :creado_por"
+    ret = "id"
+    if cfg["codigo"]:
+        params["codigo"] = (payload.codigo or _slug(payload.nombre)).lower()
+        cols = "codigo, " + cols
+        vals = ":codigo, " + vals
+        ret += ", codigo"
+    ret += ", nombre"
     if cfg["extra"] == "nombre_cientifico":
         cols += ", nombre_cientifico"
         vals += ", :nombre_cientifico"
         params["nombre_cientifico"] = payload.nombre_cientifico
-        extra_sel = ", nombre_cientifico"
+        ret += ", nombre_cientifico"
+    ret += ", es_sistema, is_active"
     try:
         result = await session.execute(
-            text(
-                f"insert into {tabla} ({cols}) values ({vals}) "
-                f"returning id, codigo, nombre{extra_sel}, es_sistema, activo"
-            ),
+            text(f"insert into {tabla} ({cols}) values ({vals}) returning {ret}"),
             params,
         )
         row = result.mappings().first()

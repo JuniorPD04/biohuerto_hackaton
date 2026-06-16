@@ -255,10 +255,10 @@ export default function Cuidados() {
       ),
     },
     {
-      key: "activo",
+      key: "is_active",
       label: "Estado",
       width: ".7fr",
-      render: (r) => <EstadoBadge activo={!!r.activo} />,
+      render: (r) => <EstadoBadge activo={!!r.is_active} />,
     },
   ];
 

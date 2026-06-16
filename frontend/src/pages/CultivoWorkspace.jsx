@@ -1580,7 +1580,7 @@ function SeccionCuidados({ cultivoId }) {
 
   const toggleActivo = (c) => {
     cuidadosApi
-      .update(c.id, { activo: !c.activo })
+      .update(c.id, { is_active: !c.is_active })
       .then((actualizado) => setRows((prev) => prev.map((r) => (r.id === c.id ? actualizado : r))))
       .catch(() => toast("No se pudo actualizar el cuidado", "danger"));
   };
@@ -1633,7 +1633,7 @@ function SeccionCuidados({ cultivoId }) {
                       </div>
                     </div>
                   </div>
-                  <Toggle on={c.activo} onClick={() => toggleActivo(c)} title={c.activo ? "Activo" : "Pausado"} />
+                  <Toggle on={c.is_active} onClick={() => toggleActivo(c)} title={c.is_active ? "Activo" : "Pausado"} />
                 </div>
 
                 {c.descripcion && (
@@ -1656,8 +1656,8 @@ function SeccionCuidados({ cultivoId }) {
                   <div className="flex items-center gap-1">
                     <IconBtn
                       name="edit"
-                      title={c.activo ? "Editar" : "Reactiva el cuidado para editarlo"}
-                      disabled={!c.activo}
+                      title={c.is_active ? "Editar" : "Reactiva el cuidado para editarlo"}
+                      disabled={!c.is_active}
                       onClick={() => openEdit(c)}
                     />
                     <IconBtn name="trash" title="Eliminar" tone="danger" onClick={() => setToDelete(c)} />

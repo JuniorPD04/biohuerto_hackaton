@@ -9,9 +9,13 @@
 -- ============================================================
 
 -- ============================================================
---  TIPOS (ENUM)
+--  CATÁLOGO: fuentes de monitoreo (antes era un ENUM; normalizado a tabla)
 -- ============================================================
-CREATE TYPE fuente_monitoreo_enum AS ENUM ('iot', 'manual');
+CREATE TABLE fuentes_monitoreo (
+  id     SMALLSERIAL PRIMARY KEY,
+  codigo VARCHAR(20)  NOT NULL UNIQUE,
+  nombre VARCHAR(60)  NOT NULL
+);
 
 -- ============================================================
 --  BLOQUE 1 · CATÁLOGOS
@@ -37,12 +41,11 @@ CREATE TABLE etapas_fenologicas (
 -- 1.2b  Especies (catálogo extensible) — identidad para la fenología por especie
 CREATE TABLE especies (
   id                SMALLSERIAL  PRIMARY KEY,
-  codigo            VARCHAR(40)  NOT NULL UNIQUE,
   nombre            VARCHAR(120) NOT NULL UNIQUE,
   nombre_cientifico VARCHAR(160) NULL,
   es_sistema        BOOLEAN      NOT NULL DEFAULT FALSE,
   creado_por_id     BIGINT       NULL,    -- FK diferida → usuarios
-  activo            BOOLEAN      NOT NULL DEFAULT TRUE
+  is_active         BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
 -- 1.2c  Fenología estandarizada: duración (min/max días) de cada etapa por especie
@@ -61,7 +64,7 @@ CREATE TABLE campanias (
   nombre       VARCHAR(120) NOT NULL UNIQUE,
   fecha_inicio DATE         NOT NULL,
   fecha_fin    DATE         NOT NULL,
-  activa       BOOLEAN      NOT NULL DEFAULT FALSE,
+  is_active    BOOLEAN      NOT NULL DEFAULT FALSE,
   created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
   deleted_at   TIMESTAMPTZ  NULL,
@@ -120,27 +123,25 @@ CREATE TABLE unidades (
   nombre        VARCHAR(60)  NOT NULL,
   es_sistema    BOOLEAN      NOT NULL DEFAULT FALSE,
   creado_por_id BIGINT       NULL,    -- FK diferida → usuarios
-  activo        BOOLEAN      NOT NULL DEFAULT TRUE
+  is_active     BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
 -- 1.10  Insumos (catálogo extensible)
 CREATE TABLE insumos (
   id            SMALLSERIAL  PRIMARY KEY,
-  codigo        VARCHAR(40)  NOT NULL UNIQUE,
   nombre        VARCHAR(120) NOT NULL,
   es_sistema    BOOLEAN      NOT NULL DEFAULT FALSE,
   creado_por_id BIGINT       NULL,    -- FK diferida → usuarios
-  activo        BOOLEAN      NOT NULL DEFAULT TRUE
+  is_active     BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
 -- 1.11  Zonas de la planta (catálogo extensible) — para incidencias
 CREATE TABLE zonas_planta (
   id            SMALLSERIAL  PRIMARY KEY,
-  codigo        VARCHAR(40)  NOT NULL UNIQUE,
   nombre        VARCHAR(80)  NOT NULL,
   es_sistema    BOOLEAN      NOT NULL DEFAULT FALSE,
   creado_por_id BIGINT       NULL,    -- FK diferida → usuarios
-  activo        BOOLEAN      NOT NULL DEFAULT TRUE
+  is_active     BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
 -- 1.12  Tipos de área de sembrío (catálogo extensible) — escalabilidad
@@ -150,7 +151,7 @@ CREATE TABLE tipos_area (
   nombre        VARCHAR(80)  NOT NULL,
   es_sistema    BOOLEAN      NOT NULL DEFAULT FALSE,
   creado_por_id BIGINT       NULL,    -- FK diferida → usuarios
-  activo        BOOLEAN      NOT NULL DEFAULT TRUE
+  is_active     BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
 -- ============================================================
@@ -180,14 +181,6 @@ ALTER TABLE insumos      ADD CONSTRAINT fk_insumos_creador   FOREIGN KEY (creado
 ALTER TABLE zonas_planta ADD CONSTRAINT fk_zonas_creador     FOREIGN KEY (creado_por_id) REFERENCES usuarios(id) ON DELETE SET NULL;
 ALTER TABLE tipos_area   ADD CONSTRAINT fk_tipos_area_creador FOREIGN KEY (creado_por_id) REFERENCES usuarios(id) ON DELETE SET NULL;
 
--- 2.2  Detalle de consumidores
-CREATE TABLE consumidores_detalle (
-  usuario_id      BIGINT      PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
-  tipo_consumidor VARCHAR(40) NOT NULL
-                  CHECK (tipo_consumidor IN ('Mayorista','Minorista','Familiar','Horeca','Otro')),
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
 
 -- 2.3  Biohuertos
 CREATE TABLE biohuertos (
@@ -219,7 +212,7 @@ CREATE TABLE biohuerto_propietarios (
   rol              VARCHAR(20)  NOT NULL DEFAULT 'propietario'
                    CHECK (rol IN ('propietario','administrador')),
   fecha_asignacion DATE         NOT NULL DEFAULT CURRENT_DATE,
-  activo           BOOLEAN      NOT NULL DEFAULT TRUE,
+  is_active        BOOLEAN      NOT NULL DEFAULT TRUE,
   last_synced_at   TIMESTAMPTZ  NULL,
   is_synced        BOOLEAN      NOT NULL DEFAULT TRUE,
   created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -306,7 +299,7 @@ CREATE TABLE cultivo_asignaciones (
   rol_en_cultivo   VARCHAR(40)  NOT NULL DEFAULT 'responsable'
                    CHECK (rol_en_cultivo IN ('responsable','apoyo','observador')),
   fecha_asignacion DATE         NOT NULL DEFAULT CURRENT_DATE,
-  activo           BOOLEAN      NOT NULL DEFAULT TRUE,
+  is_active        BOOLEAN      NOT NULL DEFAULT TRUE,
   last_synced_at   TIMESTAMPTZ  NULL,
   is_synced        BOOLEAN      NOT NULL DEFAULT TRUE,
   created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -323,7 +316,7 @@ CREATE TABLE cultivo_asignaciones (
 CREATE TABLE monitoreo_registros (
   id              UUID                  PRIMARY KEY DEFAULT uuid_generate_v4(),
   cultivo_id      UUID                  NOT NULL REFERENCES cultivos(id) ON DELETE CASCADE,
-  fuente          fuente_monitoreo_enum NOT NULL,
+  fuente_id       SMALLINT              NOT NULL REFERENCES fuentes_monitoreo(id),
   usuario_id      BIGINT                NULL REFERENCES usuarios(id) ON DELETE SET NULL,
   sensor_codigo   VARCHAR(40)           NULL,
   registrado_en   TIMESTAMPTZ           NOT NULL DEFAULT now(),
@@ -513,7 +506,7 @@ CREATE TABLE cuidados (
   descripcion      VARCHAR(200) NULL,
   frecuencia_dias  SMALLINT     NOT NULL CHECK (frecuencia_dias > 0),
   ultima_realizada TIMESTAMPTZ  NULL,
-  activo           BOOLEAN      NOT NULL DEFAULT TRUE,
+  is_active        BOOLEAN      NOT NULL DEFAULT TRUE,
   last_synced_at   TIMESTAMPTZ  NULL,
   is_synced        BOOLEAN      NOT NULL DEFAULT TRUE,
   created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -569,32 +562,29 @@ CREATE TABLE cosechas_intereses (
 --  BLOQUE 12 · HUELLA DE CARBONO
 -- ============================================================
 CREATE TABLE huella_carbono (
-  id                            BIGSERIAL     PRIMARY KEY,
-  cultivo_id                    UUID          NOT NULL REFERENCES cultivos(id)  ON DELETE CASCADE,
-  usuario_id                    BIGINT        NULL REFERENCES usuarios(id)      ON DELETE SET NULL,
-  periodo_inicio                DATE          NOT NULL,
-  periodo_fin                   DATE          NOT NULL,
-  agua_m3                       NUMERIC(10,3) NOT NULL DEFAULT 0,
-  compost_kg                    NUMERIC(10,2) NOT NULL DEFAULT 0,
-  abono_verde_kg                NUMERIC(10,2) NOT NULL DEFAULT 0,
-  area_sin_agroquimicos_m2      NUMERIC(10,2) NOT NULL DEFAULT 0,
-  aplicaciones_control_bio      INTEGER       NOT NULL DEFAULT 0,
-  factor_agua_id                SMALLINT      NOT NULL REFERENCES factores_carbono(id),
-  factor_compost_id             SMALLINT      NOT NULL REFERENCES factores_carbono(id),
-  factor_abono_verde_id         SMALLINT      NOT NULL REFERENCES factores_carbono(id),
-  factor_sin_agroquim_id        SMALLINT      NOT NULL REFERENCES factores_carbono(id),
-  factor_ctrl_bio_id            SMALLINT      NOT NULL REFERENCES factores_carbono(id),
-  emision_agua_kg_co2           NUMERIC(10,4) NOT NULL DEFAULT 0,
-  reduccion_compost_kg_co2      NUMERIC(10,4) NOT NULL DEFAULT 0,
-  reduccion_abono_verde_kg_co2  NUMERIC(10,4) NOT NULL DEFAULT 0,
-  reduccion_sin_agroquim_kg_co2 NUMERIC(10,4) NOT NULL DEFAULT 0,
-  reduccion_ctrl_bio_kg_co2     NUMERIC(10,4) NOT NULL DEFAULT 0,
-  huella_neta_kg_co2            NUMERIC(10,4) NOT NULL DEFAULT 0,
-  semaforo_ambiental            VARCHAR(10)   NOT NULL DEFAULT 'verde'
-                                CHECK (semaforo_ambiental IN ('verde','amarillo','rojo')),
-  created_at                    TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  updated_at                    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  id                  BIGSERIAL     PRIMARY KEY,
+  cultivo_id          UUID          NOT NULL REFERENCES cultivos(id)  ON DELETE CASCADE,
+  usuario_id          BIGINT        NULL REFERENCES usuarios(id)      ON DELETE SET NULL,
+  periodo_inicio      DATE          NOT NULL,
+  periodo_fin         DATE          NOT NULL,
+  huella_neta_kg_co2  NUMERIC(10,4) NOT NULL DEFAULT 0,
+  semaforo_ambiental  VARCHAR(10)   NOT NULL DEFAULT 'verde'
+                      CHECK (semaforo_ambiental IN ('verde','amarillo','rojo')),
+  created_at          TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ   NOT NULL DEFAULT now(),
   CHECK (periodo_fin >= periodo_inicio)
+);
+
+-- 12.1  Componentes del cálculo de huella (entrada+factor+resultado por componente)
+CREATE TABLE huella_componentes (
+  id               BIGSERIAL     PRIMARY KEY,
+  huella_id        BIGINT        NOT NULL REFERENCES huella_carbono(id) ON DELETE CASCADE,
+  tipo             VARCHAR(20)   NOT NULL
+                   CHECK (tipo IN ('agua','compost','abono_verde','sin_agroquim','ctrl_bio')),
+  cantidad         NUMERIC(10,3) NOT NULL DEFAULT 0,
+  factor_id        SMALLINT      NOT NULL REFERENCES factores_carbono(id),
+  resultado_kg_co2 NUMERIC(10,4) NOT NULL DEFAULT 0,
+  UNIQUE (huella_id, tipo)
 );
 
 -- ============================================================
@@ -636,7 +626,7 @@ CREATE TABLE vistas (
   nombre      VARCHAR(120) NOT NULL,
   modulo      VARCHAR(60)  NULL,
   descripcion VARCHAR(200) NULL,
-  activo      BOOLEAN      NOT NULL DEFAULT TRUE
+  is_active   BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE acciones (

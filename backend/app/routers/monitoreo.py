@@ -22,13 +22,14 @@ _LUMINOSIDAD_NIVEL_CASE = """
 """
 
 _MONITOREO_SELECT = f"""
-    select m.id::text as id, m.cultivo_id::text as cultivo_id, m.fuente,
+    select m.id::text as id, m.cultivo_id::text as cultivo_id, fm.codigo as fuente,
            m.sensor_codigo, m.registrado_en,
            m.humedad_pct, m.temperatura_c, m.luminosidad_lux, m.ph_suelo,
            m.observacion,
            {_LUMINOSIDAD_NIVEL_CASE},
            e.nombre as cultivo, b.id::text as biohuerto_id, b.nombre as biohuerto
     from monitoreo_registros m
+    left join fuentes_monitoreo fm on fm.id = m.fuente_id
     left join cultivos cu on cu.id = m.cultivo_id
     left join especies e on e.id = cu.especie_id
     left join biohuertos b on b.id = cu.biohuerto_id
@@ -52,11 +53,12 @@ async def create_monitoreo(
             f"""
             with inserted as (
               insert into monitoreo_registros (
-                cultivo_id, fuente, usuario_id, humedad_pct, temperatura_c,
+                cultivo_id, fuente_id, usuario_id, humedad_pct, temperatura_c,
                 luminosidad_lux, ph_suelo, observacion
               )
               values (
-                :cultivo_id, 'manual', :usuario_id, :humedad_pct, :temperatura_c,
+                :cultivo_id, (select id from fuentes_monitoreo where codigo = 'manual'),
+                :usuario_id, :humedad_pct, :temperatura_c,
                 :luminosidad_lux, :ph_suelo, :observacion
               )
               returning id

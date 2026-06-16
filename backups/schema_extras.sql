@@ -82,17 +82,17 @@ INSERT INTO etapas_fenologicas(codigo, nombre, orden, color_bg, color_fg) VALUES
   ('cosecha',        'Cosecha',        5, '#cfe8cd', '#1f5a2d'),
   ('finalizado',     'Finalizado',     6, '#dadcd8', '#4a4f49');
 
-INSERT INTO especies(codigo, nombre, nombre_cientifico, es_sistema) VALUES
-  ('lechuga',      'Lechuga',       'Lactuca sativa',        TRUE),
-  ('tomate',       'Tomate',        'Solanum lycopersicum',  TRUE),
-  ('fresa',        'Fresa',         'Fragaria × ananassa',   TRUE),
-  ('culantro',     'Culantro',      'Coriandrum sativum',    TRUE),
-  ('espinaca',     'Espinaca',      'Spinacia oleracea',     TRUE),
-  ('rabanito',     'Rabanito',      'Raphanus sativus',      TRUE),
-  ('zanahoria',    'Zanahoria',     'Daucus carota',         TRUE),
-  ('cebolla_china','Cebolla china', 'Allium fistulosum',     TRUE),
-  ('aji',          'Ají',           'Capsicum baccatum',     TRUE),
-  ('otro',         'Otro',          NULL,                    TRUE);
+INSERT INTO especies(nombre, nombre_cientifico, es_sistema) VALUES
+  ('Lechuga',       'Lactuca sativa',        TRUE),
+  ('Tomate',        'Solanum lycopersicum',  TRUE),
+  ('Fresa',         'Fragaria × ananassa',   TRUE),
+  ('Culantro',      'Coriandrum sativum',    TRUE),
+  ('Espinaca',      'Spinacia oleracea',     TRUE),
+  ('Rabanito',      'Raphanus sativus',      TRUE),
+  ('Zanahoria',     'Daucus carota',         TRUE),
+  ('Cebolla china', 'Allium fistulosum',     TRUE),
+  ('Ají',           'Capsicum baccatum',     TRUE),
+  ('Otro',          NULL,                    TRUE);
 
 INSERT INTO unidades(codigo, nombre, es_sistema) VALUES
   ('und',    'Unidad',         TRUE),
@@ -107,26 +107,14 @@ INSERT INTO unidades(codigo, nombre, es_sistema) VALUES
   ('docena', 'Docena',         TRUE),
   ('saco',   'Saco',           TRUE);
 
-INSERT INTO insumos(codigo, nombre, es_sistema) VALUES
-  ('compost',        'Compost',          TRUE),
-  ('humus',          'Humus de lombriz', TRUE),
-  ('biol',           'Biol',             TRUE),
-  ('ceniza',         'Ceniza',           TRUE),
-  ('jabon_potasico', 'Jabón potásico',   TRUE),
-  ('caldo_bordeles', 'Caldo bordelés',   TRUE),
-  ('cal_agricola',   'Cal agrícola',     TRUE),
-  ('estiercol',      'Estiércol',        TRUE),
-  ('abono_verde',    'Abono verde',      TRUE),
-  ('agua',           'Agua',             TRUE);
+INSERT INTO insumos(nombre, es_sistema) VALUES
+  ('Compost', TRUE), ('Humus de lombriz', TRUE), ('Biol', TRUE), ('Ceniza', TRUE),
+  ('Jabón potásico', TRUE), ('Caldo bordelés', TRUE), ('Cal agrícola', TRUE),
+  ('Estiércol', TRUE), ('Abono verde', TRUE), ('Agua', TRUE);
 
-INSERT INTO zonas_planta(codigo, nombre, es_sistema) VALUES
-  ('hoja',            'Hoja',            TRUE),
-  ('tallo',           'Tallo',           TRUE),
-  ('raiz',            'Raíz',            TRUE),
-  ('fruto',           'Fruto',           TRUE),
-  ('flor',            'Flor',            TRUE),
-  ('planta_completa', 'Planta completa', TRUE),
-  ('otro',            'Otro',            TRUE);
+INSERT INTO zonas_planta(nombre, es_sistema) VALUES
+  ('Hoja', TRUE), ('Tallo', TRUE), ('Raíz', TRUE), ('Fruto', TRUE),
+  ('Flor', TRUE), ('Planta completa', TRUE), ('Otro', TRUE);
 
 INSERT INTO tipos_area(codigo, nombre, es_sistema) VALUES
   ('biohuerto',       'Biohuerto',       TRUE),
@@ -168,6 +156,9 @@ INSERT INTO categorias_costo(nombre) VALUES
 INSERT INTO tipos_alerta(nombre) VALUES
   ('Riego'),('Fertilización'),('Control preventivo'),
   ('Cosecha'),('Rotación de cultivos'),('Otro');
+
+INSERT INTO fuentes_monitoreo(codigo, nombre) VALUES
+  ('iot', 'IoT'), ('manual', 'Manual');
 
 INSERT INTO factores_carbono(codigo, descripcion, valor, unidad, fuente) VALUES
   ('AGUA_RIEGO',   'Emisión por m³ de agua de riego',            0.344000,'kg CO₂/m³', 'IPCC Guidelines 2006'),
@@ -223,7 +214,7 @@ CREATE INDEX idx_asignaciones_productor ON cultivo_asignaciones(productor_id);
 CREATE INDEX idx_especie_etapas_especie ON especie_etapas(especie_id);
 CREATE INDEX idx_monitoreo_cultivo    ON monitoreo_registros(cultivo_id);
 CREATE INDEX idx_monitoreo_fecha      ON monitoreo_registros(registrado_en DESC);
-CREATE INDEX idx_monitoreo_fuente     ON monitoreo_registros(fuente);
+CREATE INDEX idx_monitoreo_fuente     ON monitoreo_registros(fuente_id);
 CREATE INDEX idx_incidencias_cultivo  ON incidencias(cultivo_id);
 CREATE INDEX idx_incidencias_tipo     ON incidencias(tipo_id);
 CREATE INDEX idx_incidencias_estado   ON incidencias(estado);
@@ -252,6 +243,8 @@ CREATE INDEX idx_intereses_cosecha    ON cosechas_intereses(cosecha_id);
 CREATE INDEX idx_intereses_consumidor ON cosechas_intereses(consumidor_id);
 CREATE INDEX idx_huella_cultivo       ON huella_carbono(cultivo_id);
 CREATE INDEX idx_huella_periodo       ON huella_carbono(periodo_inicio, periodo_fin);
+CREATE INDEX idx_huella_comp_huella   ON huella_componentes(huella_id);
+CREATE INDEX idx_huella_comp_factor   ON huella_componentes(factor_id);
 CREATE INDEX idx_adj_biohuerto        ON archivos_adjuntos(biohuerto_id)   WHERE biohuerto_id   IS NOT NULL;
 CREATE INDEX idx_adj_cultivo          ON archivos_adjuntos(cultivo_id)     WHERE cultivo_id     IS NOT NULL;
 CREATE INDEX idx_adj_incidencia       ON archivos_adjuntos(incidencia_id)  WHERE incidencia_id  IS NOT NULL;
@@ -287,7 +280,6 @@ CREATE INDEX idx_sync_queue_tabla     ON sync_queue(tabla);
 -- ============================================================
 CREATE TRIGGER trg_campanias_upd      BEFORE UPDATE ON campanias             FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_usuarios_upd       BEFORE UPDATE ON usuarios              FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-CREATE TRIGGER trg_consumidores_upd   BEFORE UPDATE ON consumidores_detalle  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_biohuertos_upd     BEFORE UPDATE ON biohuertos            FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_cultivos_upd       BEFORE UPDATE ON cultivos              FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_asignaciones_upd   BEFORE UPDATE ON cultivo_asignaciones  FOR EACH ROW EXECUTE FUNCTION set_updated_at();

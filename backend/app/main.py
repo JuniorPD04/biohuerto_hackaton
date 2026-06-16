@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.database import AsyncSessionLocal, get_session, ping_database
 from app.rate_limit import limiter
 from app.routers import (
+    acceso,
     alertas,
     auth,
     biohuertos,
@@ -22,6 +23,7 @@ from app.routers import (
     cuidados,
     cultivos,
     dashboard,
+    entidades,
     diagnostico,
     incidencias,
     monitoreo,
@@ -67,6 +69,8 @@ app.include_router(cosechas.router)
 app.include_router(dashboard.router)
 app.include_router(campanias.router)
 app.include_router(catalogos.router)
+app.include_router(acceso.router)
+app.include_router(entidades.router)
 
 
 @app.on_event("startup")

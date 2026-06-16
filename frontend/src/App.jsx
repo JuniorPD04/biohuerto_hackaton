@@ -16,6 +16,8 @@ import Incidencias from "./pages/Incidencias.jsx";
 import Monitoreo from "./pages/Monitoreo.jsx";
 import Cuidados from "./pages/Cuidados.jsx";
 import Trazabilidad from "./pages/Trazabilidad.jsx";
+import RolesAccesos from "./pages/RolesAccesos.jsx";
+import Entidades from "./pages/Entidades.jsx";
 
 function BootScreen() {
   return (
@@ -69,6 +71,8 @@ export default function App() {
         <Route path="alertas" element={<Alertas />} />
         <Route path="ofertas" element={<Navigate to="/ofertas/cosechas" replace />} />
         <Route path="ofertas/:tab" element={<Ofertas />} />
+        <Route path="roles" element={<RolesAccesos />} />
+        <Route path="entidades" element={<Entidades />} />
       </Route>
       <Route path="*" element={<Navigate to="/panel" replace />} />
     </Routes>

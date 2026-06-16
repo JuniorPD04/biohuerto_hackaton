@@ -21,7 +21,7 @@ const EMPTY_FORM = {
   nombre: "",
   fecha_inicio: "",
   fecha_fin: "",
-  activa: true,
+  is_active: true,
 };
 
 // Normaliza una fecha ISO (o con hora) al formato yyyy-mm-dd que usan los <input type=date>.
@@ -38,7 +38,7 @@ function CampaniaModal({ open, mode, row, onClose, onSave }) {
         nombre: row.nombre || "",
         fecha_inicio: toDateInput(row.fecha_inicio),
         fecha_fin: toDateInput(row.fecha_fin),
-        activa: !!row.activa,
+        is_active: !!row.is_active,
       });
     } else {
       setForm(EMPTY_FORM);
@@ -56,7 +56,7 @@ function CampaniaModal({ open, mode, row, onClose, onSave }) {
           nombre: form.nombre,
           fecha_inicio: form.fecha_inicio || null,
           fecha_fin: form.fecha_fin || null,
-          activa: form.activa,
+          is_active: form.is_active,
         },
         mode,
         row?.id,
@@ -103,12 +103,12 @@ function CampaniaModal({ open, mode, row, onClose, onSave }) {
         <Field label="Estado">
           <div className="flex items-center gap-3">
             <Toggle
-              on={form.activa}
-              title={form.activa ? "Activa" : "Inactiva"}
-              onClick={() => setForm((f) => ({ ...f, activa: !f.activa }))}
+              on={form.is_active}
+              title={form.is_active ? "Activa" : "Inactiva"}
+              onClick={() => setForm((f) => ({ ...f, is_active: !f.is_active }))}
             />
             <span className="text-sm font-bold text-muted-1">
-              {form.activa ? "Activa" : "Inactiva"}
+              {form.is_active ? "Activa" : "Inactiva"}
             </span>
           </div>
         </Field>
@@ -198,10 +198,10 @@ export default function Campanias() {
       ),
     },
     {
-      key: "activa",
+      key: "is_active",
       label: "Estado",
       width: ".8fr",
-      render: (c) => <EstadoBadge activo={!!c.activa} />,
+      render: (c) => <EstadoBadge activo={!!c.is_active} />,
     },
     {
       key: "cultivos_count",
