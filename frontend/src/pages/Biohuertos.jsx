@@ -1376,13 +1376,6 @@ export default function Biohuertos() {
               ? "Ningún biohuerto coincide con tu búsqueda."
               : "Aún no se han registrado fichas de biohuertos."
           }
-          action={
-            !q && (
-              <Button icon="plus" onClick={() => setModal({ mode: "new" })}>
-                Nuevo biohuerto
-              </Button>
-            )
-          }
         />
       ) : view === "cards" ? (
         <div

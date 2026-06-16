@@ -37,9 +37,14 @@ sh backend/db/apply-migrations.sh
 O una migración puntual:
 
 ```bash
-docker compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+docker compose exec -T db sh -c \
+  'PGPASSWORD="$MIGRATION_DB_PASSWORD" psql -v ON_ERROR_STOP=1 -U migration_user -d "$POSTGRES_DB"' \
   < backend/db/migrations/001_usuarios_lat_lng.sql
 ```
+
+> Importante: córrelas como **`migration_user`** (no como superusuario). Así las
+> tablas nuevas quedan con el dueño correcto y heredan permisos para `app_bio_user`.
+> Si las corres como superusuario, la app falla con *"permission denied for table …"*.
 
 ### Sin Docker (psql directo)
 

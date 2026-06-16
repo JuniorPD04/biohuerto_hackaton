@@ -19,7 +19,12 @@ for f in "$MIG_DIR"/*.sql; do
   [ -e "$f" ] || continue
   found=1
   echo "→ aplicando $(basename "$f")"
-  docker compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < "$f"
+  # Se corre como migration_user (dueño del esquema): así las tablas nuevas
+  # quedan con dueño correcto y heredan los permisos para app_bio_user
+  # (ALTER DEFAULT PRIVILEGES). Correr como superusuario deja la tabla sin
+  # acceso para la app (error "permission denied for table ...").
+  docker compose exec -T db sh -c \
+    'PGPASSWORD="$MIGRATION_DB_PASSWORD" psql -v ON_ERROR_STOP=1 -U migration_user -d "$POSTGRES_DB"' < "$f"
 done
 
 if [ "$found" -eq 0 ]; then
