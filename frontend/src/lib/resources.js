@@ -7,6 +7,9 @@ const asParams = (arg) => (typeof arg === "string" ? { cultivo_id: arg } : arg |
 export const biohuertosApi = {
   list: () => unwrap(api.get("/api/biohuertos")),
   get: (id) => unwrap(api.get(`/api/biohuertos/${id}`)),
+  propietarios: (id) => unwrap(api.get(`/api/biohuertos/${id}/propietarios`)),
+  assignPropietario: (id, body) => unwrap(api.post(`/api/biohuertos/${id}/propietarios`, body)),
+  removePropietario: (id, propietarioId) => api.delete(`/api/biohuertos/${id}/propietarios/${propietarioId}`),
   create: (body) => unwrap(api.post("/api/biohuertos", body)),
   update: (id, body) => unwrap(api.patch(`/api/biohuertos/${id}`, body)),
   remove: (id) => api.delete(`/api/biohuertos/${id}`),
@@ -32,6 +35,7 @@ export const alertasApi = {
 
 export const cosechasApi = {
   list: (params) => unwrap(api.get("/api/cosechas", { params })),
+  public: () => unwrap(api.get("/api/cosechas/public")),
   get: (id) => unwrap(api.get(`/api/cosechas/${id}`)),
   create: (body) => unwrap(api.post("/api/cosechas", body)),
   update: (id, body) => unwrap(api.patch(`/api/cosechas/${id}`, body)),
@@ -131,6 +135,7 @@ export const entidadesApi = {
 // Control de acceso por rol (matriz de permisos vista × acción)
 export const accesoApi = {
   matriz: () => unwrap(api.get("/api/acceso/matriz")),
+  me: () => unwrap(api.get("/api/acceso/me")),
   setPermisos: (rolId, permisos) =>
     unwrap(api.put(`/api/acceso/roles/${rolId}/permisos`, { permisos })),
 };

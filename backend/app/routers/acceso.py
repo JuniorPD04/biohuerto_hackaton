@@ -122,6 +122,49 @@ async def get_matriz(
     }
 
 
+@router.get("/me")
+async def get_mis_permisos(
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Permisos efectivos del usuario actual para filtrar navegacion y rutas."""
+    rows = (
+        await session.execute(
+            text(
+                """
+                select v.codigo as vista_codigo, v.nombre as vista_nombre,
+                       v.modulo, a.codigo as accion_codigo
+                from rol_permisos rp
+                join roles r on r.id = rp.rol_id
+                join vistas v on v.id = rp.vista_id
+                join acciones a on a.id = rp.accion_id
+                where r.codigo = :rol
+                  and v.is_active = true
+                order by v.id, a.id
+                """
+            ),
+            {"rol": current_user.rol},
+        )
+    ).mappings().all()
+    vistas: dict[str, dict] = {}
+    for row in rows:
+        item = vistas.setdefault(
+            row["vista_codigo"],
+            {
+                "codigo": row["vista_codigo"],
+                "nombre": row["vista_nombre"],
+                "modulo": row["modulo"],
+                "acciones": [],
+            },
+        )
+        item["acciones"].append(row["accion_codigo"])
+    return {
+        "rol": current_user.rol,
+        "vistas": list(vistas.values()),
+        "permisos": {codigo: item["acciones"] for codigo, item in vistas.items()},
+    }
+
+
 @router.put("/roles/{rol_id}/permisos", status_code=status.HTTP_200_OK)
 async def set_permisos(
     rol_id: int,

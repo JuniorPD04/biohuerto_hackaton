@@ -18,6 +18,7 @@ import Cuidados from "./pages/Cuidados.jsx";
 import Trazabilidad from "./pages/Trazabilidad.jsx";
 import RolesAccesos from "./pages/RolesAccesos.jsx";
 import Entidades from "./pages/Entidades.jsx";
+import Mercado from "./pages/Mercado.jsx";
 
 function BootScreen() {
   return (
@@ -37,9 +38,13 @@ function Protected({ children }) {
 }
 
 function GuestOnly({ children }) {
-  const { booting, isAuthenticated } = useAuth();
+  const { booting, isAuthenticated, user } = useAuth();
   if (booting) return <BootScreen />;
-  return isAuthenticated ? <Navigate to="/panel" replace /> : children;
+  return isAuthenticated ? <Navigate to={defaultPath(user)} replace /> : children;
+}
+
+function defaultPath(user) {
+  return user?.rol === "consumidor" ? "/mercado" : "/panel";
 }
 
 export default function App() {
@@ -54,8 +59,9 @@ export default function App() {
           </Protected>
         }
       >
-        <Route index element={<Navigate to="/panel" replace />} />
+        <Route index element={<RoleHome />} />
         <Route path="panel" element={<Panel />} />
+        <Route path="mercado" element={<Mercado />} />
         <Route path="usuarios" element={<Navigate to="/usuarios/productores" replace />} />
         <Route path="usuarios/:tab" element={<Usuarios />} />
         <Route path="biohuertos" element={<Biohuertos />} />
@@ -74,7 +80,17 @@ export default function App() {
         <Route path="roles" element={<RolesAccesos />} />
         <Route path="entidades" element={<Entidades />} />
       </Route>
-      <Route path="*" element={<Navigate to="/panel" replace />} />
+      <Route path="*" element={<FallbackHome />} />
     </Routes>
   );
+}
+
+function RoleHome() {
+  const { user } = useAuth();
+  return <Navigate to={defaultPath(user)} replace />;
+}
+
+function FallbackHome() {
+  const { user, isAuthenticated } = useAuth();
+  return <Navigate to={isAuthenticated ? defaultPath(user) : "/login"} replace />;
 }

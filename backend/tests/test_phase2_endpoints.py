@@ -40,6 +40,7 @@ class FakeResult:
     def __init__(self, rows=None, scalar=None):
         self.rows = rows or []
         self._scalar = scalar
+        self.rowcount = 1
 
     def mappings(self):
         return FakeMappings(self.rows)
@@ -50,6 +51,16 @@ class FakeResult:
         if not self.rows:
             return None
         return next(iter(self.rows[0].values()))
+
+    def scalar_one(self):
+        if self._scalar is not None:
+            return self._scalar
+        if not self.rows:
+            raise AssertionError("Expected scalar row, got none")
+        return next(iter(self.rows[0].values()))
+
+    def first(self):
+        return self.rows[0] if self.rows else None
 
 
 class FakeSession:
@@ -96,6 +107,8 @@ def biohuerto_row(**overrides):
         "descripcion": "Biohuerto comunitario",
         "created_at": NOW,
         "updated_at": NOW,
+        "grid_filas": 4,
+        "grid_columnas": 4,
     }
     row.update(overrides)
     return row
@@ -114,6 +127,12 @@ def cultivo_row(**overrides):
         "cantidad": Decimal("80.00"),
         "area_m2": Decimal("12.00"),
         "campania": "Campania mayo 2026",
+        "etapa_id": 2,
+        "especie_id": 1,
+        "unidad_id": 1,
+        "campania_id": 1,
+        "celda_fila": None,
+        "celda_columna": None,
         "notas": "Cultivo demo",
         "is_synced": True,
         "created_at": NOW,
@@ -177,6 +196,7 @@ def test_register_returns_access_token_and_secure_refresh_cookie():
 
     assert response.status_code == 201
     assert response.json()["access_token"]
+    assert response.json()["user"]["rol"] == "consumidor"
     cookie = response.headers["set-cookie"].lower()
     assert REFRESH_COOKIE_NAME in cookie
     assert "httponly" in cookie
@@ -242,6 +262,12 @@ def test_create_cultivo_for_owned_biohuerto():
     fake = FakeSession(
         [
             FakeResult(rows=[{"user_id": 2}]),
+            FakeResult(rows=[{"grid_filas": 4, "grid_columnas": 4}]),
+            FakeResult(rows=[]),
+            FakeResult(scalar=UUID("11111111-1111-4111-8111-111111111111")),
+            FakeResult(rows=[]),
+            FakeResult(rows=[]),
+            FakeResult(rows=[]),
             FakeResult(rows=[cultivo_row(etapa="semillero")]),
         ]
     )
@@ -250,14 +276,17 @@ def test_create_cultivo_for_owned_biohuerto():
     response = client.post(
         "/api/cultivos",
         json={
-            "biohuerto_id": 1,
-            "especie": "Lechuga",
+            "biohuerto_id": "11111111-1111-4111-8111-111111111111",
+            "especie_id": 1,
             "variedad": "Seda",
+            "etapa": "semillero",
             "fecha_siembra": "2026-05-10",
             "fecha_estimada_cosecha": "2026-06-25",
             "cantidad": "80.00",
             "area_m2": "12.00",
             "campania": "Campania mayo 2026",
+            "celda_fila": 1,
+            "celda_columna": 1,
         },
     )
 

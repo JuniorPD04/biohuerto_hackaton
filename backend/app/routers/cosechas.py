@@ -89,6 +89,24 @@ async def list_cosechas(
     return [_to_out(row) for row in result.mappings().all()]
 
 
+@router.get("/public", response_model=list[CosechaOut])
+async def list_public_cosechas(
+    session: AsyncSession = Depends(get_session),
+) -> list[CosechaOut]:
+    result = await session.execute(
+        text(
+            _COSECHA_SELECT
+            + """
+            where co.deleted_at is null
+              and co.estado = 'publicado'
+            order by co.published_at desc nulls last, co.fecha_cosecha desc, co.created_at desc
+            """
+        ),
+        {"enc_key": get_settings().pgcrypto_key},
+    )
+    return [_to_out(row) for row in result.mappings().all()]
+
+
 @router.post("", response_model=CosechaOut, status_code=status.HTTP_201_CREATED)
 async def create_cosecha(
     payload: CosechaCreate,

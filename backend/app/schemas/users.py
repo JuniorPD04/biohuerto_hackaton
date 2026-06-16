@@ -40,6 +40,7 @@ class UserUpdate(BaseModel):
 
 class UserAdminUpdate(BaseModel):
     is_active: bool | None = None
+    rol: UserRole | None = None
     nombre: str | None = Field(default=None, min_length=2, max_length=160)
     telefono: str | None = Field(default=None, max_length=40)
     direccion: str | None = Field(default=None, max_length=240)
