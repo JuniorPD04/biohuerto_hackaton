@@ -196,8 +196,8 @@ export default function Panel() {
       </div>
 
       {/* Fila 2: (costos + eco cards) | semáforo ambiental */}
-      <div className="mb-6 grid items-start gap-6 lg:grid-cols-[1.3fr_1fr]">
-        <div className="grid content-start gap-6">
+      <div className="mb-6 grid items-stretch gap-6 lg:grid-cols-[1.15fr_1fr]">
+        <div className="flex flex-col gap-6">
           <Card pad="p-[26px]">
             <div className="mb-[22px] flex items-start justify-between">
               <div>
@@ -212,7 +212,7 @@ export default function Panel() {
             <CostBars data={costBars} />
           </Card>
 
-          <div className="grid gap-6 sm:grid-cols-2">
+          <div className="grid flex-1 grid-rows-2 gap-6">
             <EcoCard icon="seedling" tint="zanahoria" titulo="Compost aplicado" valor={`${data.compost_kg.toFixed(0)} kg`} sub="compost registrado en el periodo" />
             <EcoCard icon="drop" tint="espinaca" titulo="Costo de agua acumulado" valor={fmtMoneda(data.costo_agua)} sub="categoría Agua en costeo de cultivos" />
           </div>
@@ -522,13 +522,17 @@ function SemaforoAmbiental({ cultivos }) {
 /* ---- Eco card ---- */
 function EcoCard({ icon, tint, titulo, valor, sub, positive }) {
   return (
-    <Card pad="p-[22px]">
-      <span className="grid h-11 w-11 place-items-center rounded-xl text-white" style={{ background: tintGradient(tint) }}>
-        <Icon name={icon} size={22} />
-      </span>
-      <div className="mt-4 text-sm font-bold text-muted-2">{titulo}</div>
-      <div className="mt-1 text-2xl font-extrabold text-text">{valor}</div>
-      <div className="mt-2 flex items-center gap-[6px] text-[13px] font-bold" style={{ color: positive ? "#2f8a3e" : "var(--muted-2)" }}>
+    <Card pad="p-[22px]" className="flex h-full flex-col justify-center">
+      <div className="flex items-center gap-4">
+        <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-xl text-white" style={{ background: tintGradient(tint) }}>
+          <Icon name={icon} size={22} />
+        </span>
+        <div className="min-w-0">
+          <div className="text-sm font-bold text-muted-2">{titulo}</div>
+          <div className="mt-[2px] text-2xl font-extrabold text-text">{valor}</div>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center gap-[6px] text-[13px] font-bold" style={{ color: positive ? "#2f8a3e" : "var(--muted-2)" }}>
         {positive && <Icon name="check" size={15} stroke={2.4} />}
         {sub}
       </div>

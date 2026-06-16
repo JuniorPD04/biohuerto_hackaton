@@ -16,21 +16,33 @@ router = APIRouter(prefix="/api/trazabilidad", tags=["trazabilidad"])
 
 # Las columnas es_sostenible / sin_agroquimicos se derivan de la categoria de la practica.
 _PRACTICA_SELECT = """
-    select p.id, p.cultivo_id, tp.nombre as tipo, cp.nombre as categoria,
-           p.descripcion, p.insumo, p.cantidad, p.unidad,
+    select p.id::text as id, p.cultivo_id, tp.nombre as tipo, cp.nombre as categoria,
+           p.descripcion, p.insumo_id, ins.nombre as insumo,
+           p.cantidad, p.unidad_id, u.nombre as unidad,
            p.fecha_aplicacion as fecha,
-           cp.es_sostenible as sostenible, cp.sin_agroquimicos
+           cp.es_sostenible as sostenible, cp.sin_agroquimicos,
+           e.nombre as cultivo, b.id::text as biohuerto_id, b.nombre as biohuerto
     from practicas_agricolas p
     join tipos_practica tp on tp.id = p.tipo_id
     join categorias_practica cp on cp.id = tp.categoria_id
+    left join insumos ins on ins.id = p.insumo_id
+    left join unidades u on u.id = p.unidad_id
+    left join cultivos cu on cu.id = p.cultivo_id
+    left join especies e on e.id = cu.especie_id
+    left join biohuertos b on b.id = cu.biohuerto_id
 """
 
 _COSTO_SELECT = """
-    select co.id, co.cultivo_id, cc.nombre as categoria,
-           co.descripcion, co.cantidad, co.unidad,
-           co.monto, co.moneda, co.fecha
+    select co.id::text as id, co.cultivo_id::text as cultivo_id, cc.nombre as categoria,
+           co.descripcion, co.cantidad, co.unidad_id, u.nombre as unidad,
+           co.monto, co.moneda, co.fecha,
+           e.nombre as cultivo, b.id::text as biohuerto_id, b.nombre as biohuerto
     from costos_produccion co
     join categorias_costo cc on cc.id = co.categoria_id
+    left join unidades u on u.id = co.unidad_id
+    left join cultivos cu on cu.id = co.cultivo_id
+    left join especies e on e.id = cu.especie_id
+    left join biohuertos b on b.id = cu.biohuerto_id
 """
 
 
@@ -58,12 +70,14 @@ async def create_practica(
             """
             insert into practicas_agricolas (
               cultivo_id, usuario_id, tipo_id, descripcion,
-              insumo, cantidad, unidad, fecha_aplicacion
+              insumo_id, cantidad, unidad_id, fecha_aplicacion
             )
             values (
               :cultivo_id, :usuario_id,
               (select id from tipos_practica where nombre = :tipo),
-              :descripcion, :insumo, :cantidad, :unidad, :fecha_aplicacion
+              :descripcion, :insumo_id, :cantidad,
+              coalesce(:unidad_id, (select id from unidades where codigo = 'und')),
+              :fecha_aplicacion
             )
             returning id
             """
@@ -73,9 +87,9 @@ async def create_practica(
             "usuario_id": current_user.id,
             "tipo": payload.tipo,
             "descripcion": payload.descripcion,
-            "insumo": payload.insumo,
+            "insumo_id": payload.insumo_id,
             "cantidad": payload.cantidad,
-            "unidad": payload.unidad,
+            "unidad_id": payload.unidad_id,
             "fecha_aplicacion": payload.fecha,
         },
     )
@@ -91,19 +105,20 @@ async def create_practica(
 @router.get("/practicas", response_model=list[PracticaOut])
 async def list_practicas(
     cultivo_id: UUID | None = None,
+    biohuerto_id: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=100),
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[PracticaOut]:
     params: dict = {"limit": limit}
     filters = ["p.deleted_at is null"]
-    if current_user.rol != "admin":
-        filters.append("p.usuario_id = :usuario_id")
-        params["usuario_id"] = current_user.id
     if cultivo_id is not None:
         await _ensure_cultivo_access(session, cultivo_id, current_user)
         filters.append("p.cultivo_id = :cultivo_id")
         params["cultivo_id"] = cultivo_id
+    if biohuerto_id:
+        filters.append("cu.biohuerto_id = :biohuerto_id")
+        params["biohuerto_id"] = biohuerto_id
 
     result = await session.execute(
         text(
@@ -129,12 +144,12 @@ async def create_costo(
             """
             insert into costos_produccion (
               cultivo_id, usuario_id, categoria_id, descripcion,
-              cantidad, unidad, monto, moneda, fecha
+              cantidad, unidad_id, monto, moneda, fecha
             )
             values (
               :cultivo_id, :usuario_id,
               (select id from categorias_costo where nombre = :categoria),
-              :descripcion, :cantidad, :unidad, :monto, :moneda, :fecha
+              :descripcion, :cantidad, :unidad_id, :monto, :moneda, :fecha
             )
             returning id
             """
@@ -145,7 +160,7 @@ async def create_costo(
             "categoria": payload.categoria,
             "descripcion": payload.descripcion,
             "cantidad": payload.cantidad,
-            "unidad": payload.unidad,
+            "unidad_id": payload.unidad_id,
             "monto": payload.monto,
             "moneda": payload.moneda,
             "fecha": payload.fecha,
@@ -163,19 +178,20 @@ async def create_costo(
 @router.get("/costos", response_model=list[CostoOut])
 async def list_costos(
     cultivo_id: UUID | None = None,
+    biohuerto_id: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=100),
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[CostoOut]:
     params: dict = {"limit": limit}
     filters = ["co.deleted_at is null"]
-    if current_user.rol != "admin":
-        filters.append("co.usuario_id = :usuario_id")
-        params["usuario_id"] = current_user.id
     if cultivo_id is not None:
         await _ensure_cultivo_access(session, cultivo_id, current_user)
         filters.append("co.cultivo_id = :cultivo_id")
         params["cultivo_id"] = cultivo_id
+    if biohuerto_id:
+        filters.append("cu.biohuerto_id = :biohuerto_id")
+        params["biohuerto_id"] = biohuerto_id
 
     result = await session.execute(
         text(
@@ -191,7 +207,7 @@ async def list_costos(
 
 @router.get("/biohuertos/{biohuerto_id}/resumen", response_model=TrazabilidadResumen)
 async def get_resumen_trazabilidad(
-    biohuerto_id: int,
+    biohuerto_id: UUID,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> TrazabilidadResumen:
@@ -245,7 +261,7 @@ async def get_resumen_trazabilidad(
     total_costos = _decimal(costos.scalar_one_or_none())
 
     return TrazabilidadResumen(
-        biohuerto_id=biohuerto_id,
+        biohuerto_id=str(biohuerto_id),
         total_practicas=total_practicas,
         total_costos=total_costos,
         practicas_sostenibles=sostenibles,

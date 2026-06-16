@@ -25,9 +25,20 @@ export function Badge({ children, bg, fg, dot, className = "" }) {
   );
 }
 
-export function EtapaBadge({ etapa, className }) {
-  const e = ETAPAS[etapa] || ETAPAS.semillero;
-  return <Badge bg={e.bg} fg={e.fg} dot={e.dot} className={className}>{e.label}</Badge>;
+export function EtapaBadge({ etapa, nombre, className }) {
+  // `etapa` puede ser un slug conocido (semillero, crecimiento…) o, con el
+  // modelo nuevo, venir solo el nombre por `nombre`/`etapa_nombre`.
+  const e = ETAPAS[etapa];
+  if (e) {
+    return <Badge bg={e.bg} fg={e.fg} dot={e.dot} className={className}>{e.label}</Badge>;
+  }
+  const label = nombre || etapa;
+  if (!label) {
+    const f = ETAPAS.semillero;
+    return <Badge bg={f.bg} fg={f.fg} dot={f.dot} className={className}>—</Badge>;
+  }
+  // Etapa de catálogo sin estilo asociado: badge neutro.
+  return <Badge bg="#eef2ec" fg="#5a625a" dot="#9aa39a" className={className}>{label}</Badge>;
 }
 
 // Badge genérico a partir de un mapa (prioridad/estado).

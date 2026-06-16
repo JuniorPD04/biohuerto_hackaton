@@ -21,6 +21,7 @@ import {
 import { useToast } from "../components/ui/Toast.jsx";
 import { fmtFecha, fmtMoneda, tintGradient, tintFor } from "../lib/theme.js";
 import {
+  catalogosApi,
   cultivosApi,
   cuidadosApi,
   diagnosticoApi,
@@ -64,8 +65,6 @@ const CULTIVO_SECTIONS = [
   { id: "cuidados", label: "Cuidados", icon: "drop" },
 ];
 
-const TIPOS_INCIDENCIA = ["Plaga", "Enfermedad", "Clima adverso", "Daño físico", "Deficiencia nutricional", "Otro"];
-
 const TIPOS_CUIDADO = [
   { value: "Riego", icon: "drop" },
   { value: "Fertilización", icon: "leaf" },
@@ -83,6 +82,24 @@ function fechaHora(s) {
   const hh = String(dt.getHours()).padStart(2, "0");
   const mi = String(dt.getMinutes()).padStart(2, "0");
   return `${dd}/${mm} · ${hh}:${mi}`;
+}
+
+// Carga un catálogo ({id, nombre}) una vez. Devuelve [] mientras carga o si falla.
+function useCatalogo(catalogo) {
+  const [items, setItems] = useState([]);
+  useEffect(() => {
+    let vivo = true;
+    catalogosApi
+      .list(catalogo)
+      .then((d) => {
+        if (vivo) setItems(Array.isArray(d) ? d : d?.items || []);
+      })
+      .catch(() => vivo && setItems([]));
+    return () => {
+      vivo = false;
+    };
+  }, [catalogo]);
+  return items;
 }
 
 /* ============ Table primitives (inline) ============ */
@@ -628,6 +645,8 @@ function SeccionDiagnostico({ cultivoId, cultivo }) {
 /* ============ Sección: Incidencias ============ */
 function SeccionIncidencias({ cultivoId }) {
   const toast = useToast();
+  const tiposIncidencia = useCatalogo("tipos-incidencia");
+  const zonasPlanta = useCatalogo("zonas-planta");
   const [rows, setRows] = useState(null);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -643,10 +662,10 @@ function SeccionIncidencias({ cultivoId }) {
     hasta: "",
   });
   const blankForm = {
-    tipo: TIPOS_INCIDENCIA[0],
+    tipo: "",
     descripcion: "",
     severidad: "media",
-    zona_afectada: "",
+    zona_id: "",
     estado: "abierta",
   };
   const [form, setForm] = useState(blankForm);
@@ -674,7 +693,7 @@ function SeccionIncidencias({ cultivoId }) {
       tipo: i.tipo,
       descripcion: i.descripcion,
       severidad: i.severidad,
-      zona_afectada: i.zona_afectada || "",
+      zona_id: i.zona_id != null ? String(i.zona_id) : "",
       estado: i.estado,
     });
     setModal(true);
@@ -685,12 +704,17 @@ function SeccionIncidencias({ cultivoId }) {
       toast("Ingresa una descripción", "danger");
       return;
     }
+    if (!form.tipo) {
+      toast("Selecciona un tipo de incidencia", "danger");
+      return;
+    }
     setSaving(true);
     const payload = {
+      // El backend resuelve el nombre del tipo → id.
       tipo: form.tipo,
       descripcion: form.descripcion.trim(),
       severidad: form.severidad,
-      zona_afectada: form.zona_afectada.trim() || null,
+      zona_id: form.zona_id === "" ? null : Number(form.zona_id),
       estado: form.estado,
     };
     const req = editing
@@ -734,7 +758,7 @@ function SeccionIncidencias({ cultivoId }) {
     if (filtros.estado && i.estado !== filtros.estado) return false;
     if (filtros.busqueda) {
       const q = filtros.busqueda.toLowerCase();
-      const hay = `${i.descripcion} ${i.zona_afectada || ""}`.toLowerCase();
+      const hay = `${i.descripcion} ${i.zona_afectada || i.zona || ""}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     const fecha = (i.reportado_en || "").slice(0, 10);
@@ -765,8 +789,8 @@ function SeccionIncidencias({ cultivoId }) {
           <Field label="Tipo">
             <Select value={filtros.tipo} onChange={(e) => setFiltros({ ...filtros, tipo: e.target.value })}>
               <option value="">Todos</option>
-              {TIPOS_INCIDENCIA.map((t) => (
-                <option key={t} value={t}>{t}</option>
+              {tiposIncidencia.map((t) => (
+                <option key={t.id} value={t.nombre}>{t.nombre}</option>
               ))}
             </Select>
           </Field>
@@ -822,7 +846,7 @@ function SeccionIncidencias({ cultivoId }) {
                   <span className="truncate text-[14px] text-muted-1">{i.descripcion}</span>
                 </Cell>
                 <Cell>
-                  <span className="text-[13.5px] text-muted-2">{i.zona_afectada || "—"}</span>
+                  <span className="text-[13.5px] text-muted-2">{i.zona_afectada || i.zona || "—"}</span>
                 </Cell>
                 <Cell>
                   <EstadoIncidenciaBadge estado={i.estado} />
@@ -861,8 +885,9 @@ function SeccionIncidencias({ cultivoId }) {
         <div className="grid grid-cols-2 gap-4">
           <Field label="Tipo de incidencia">
             <Select value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
-              {TIPOS_INCIDENCIA.map((t) => (
-                <option key={t} value={t}>{t}</option>
+              <option value="">Selecciona…</option>
+              {tiposIncidencia.map((t) => (
+                <option key={t.id} value={t.nombre}>{t.nombre}</option>
               ))}
             </Select>
           </Field>
@@ -883,11 +908,12 @@ function SeccionIncidencias({ cultivoId }) {
         </Field>
         <div className="mt-[14px] grid grid-cols-2 gap-4">
           <Field label="Zona afectada">
-            <Input
-              value={form.zona_afectada}
-              onChange={(e) => setForm({ ...form, zona_afectada: e.target.value })}
-              placeholder="Ej: Sector norte"
-            />
+            <Select value={form.zona_id} onChange={(e) => setForm({ ...form, zona_id: e.target.value })}>
+              <option value="">Sin especificar</option>
+              {zonasPlanta.map((z) => (
+                <option key={z.id} value={z.id}>{z.nombre}</option>
+              ))}
+            </Select>
           </Field>
           <Field label="Estado">
             <Select value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })}>
@@ -917,7 +943,7 @@ function SeccionIncidencias({ cultivoId }) {
             <div className="grid grid-cols-2 gap-3 text-[13.5px] text-muted-2">
               <div>
                 <span className="font-bold text-muted-1">Zona afectada: </span>
-                {viewing.zona_afectada || "—"}
+                {viewing.zona_afectada || viewing.zona || "—"}
               </div>
               <div>
                 <span className="font-bold text-muted-1">Fecha: </span>
@@ -1107,15 +1133,18 @@ function SeccionRecomendaciones({ cultivoId, cultivo }) {
 /* ============ Sección: Prácticas / Trazabilidad ============ */
 function SeccionPracticas({ cultivoId }) {
   const toast = useToast();
+  const tiposPractica = useCatalogo("tipos-practica");
+  const insumos = useCatalogo("insumos");
+  const unidades = useCatalogo("unidades");
   const [rows, setRows] = useState(null);
   const [modal, setModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     tipo: "",
     descripcion: "",
-    insumo: "",
+    insumo_id: "",
     cantidad: "",
-    unidad: "",
+    unidad_id: "",
     fecha: new Date().toISOString().slice(0, 10),
   });
 
@@ -1135,9 +1164,9 @@ function SeccionPracticas({ cultivoId }) {
     setForm({
       tipo: "",
       descripcion: "",
-      insumo: "",
+      insumo_id: "",
       cantidad: "",
-      unidad: "",
+      unidad_id: "",
       fecha: new Date().toISOString().slice(0, 10),
     });
     setModal(true);
@@ -1151,11 +1180,12 @@ function SeccionPracticas({ cultivoId }) {
     trazabilidadApi
       .crearPractica({
         cultivo_id: cultivoId,
+        // El backend resuelve el nombre del tipo de práctica → id.
         tipo: form.tipo.trim(),
         descripcion: form.descripcion.trim(),
-        insumo: form.insumo.trim() || null,
+        insumo_id: form.insumo_id === "" ? null : Number(form.insumo_id),
         cantidad: form.cantidad === "" ? null : +form.cantidad,
-        unidad: form.unidad.trim() || null,
+        unidad_id: form.unidad_id === "" ? null : Number(form.unidad_id),
         fecha: form.fecha,
       })
       .then(() => {
@@ -1250,7 +1280,12 @@ function SeccionPracticas({ cultivoId }) {
       >
         <div className="grid grid-cols-2 gap-4">
           <Field label="Tipo de práctica">
-            <Input value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })} placeholder="Ej: Aplicación de compost" />
+            <Select value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
+              <option value="">Selecciona…</option>
+              {tiposPractica.map((t) => (
+                <option key={t.id} value={t.nombre}>{t.nombre}</option>
+              ))}
+            </Select>
           </Field>
           <Field label="Fecha de aplicación">
             <Input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} />
@@ -1265,13 +1300,23 @@ function SeccionPracticas({ cultivoId }) {
         </Field>
         <div className="mt-[14px] grid grid-cols-3 gap-4">
           <Field label="Insumo">
-            <Input value={form.insumo} onChange={(e) => setForm({ ...form, insumo: e.target.value })} placeholder="Ej: Humus" />
+            <Select value={form.insumo_id} onChange={(e) => setForm({ ...form, insumo_id: e.target.value })}>
+              <option value="">Sin insumo</option>
+              {insumos.map((i) => (
+                <option key={i.id} value={i.id}>{i.nombre}</option>
+              ))}
+            </Select>
           </Field>
           <Field label="Cantidad">
             <Input type="number" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value })} placeholder="0" />
           </Field>
           <Field label="Unidad">
-            <Input value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} placeholder="kg" />
+            <Select value={form.unidad_id} onChange={(e) => setForm({ ...form, unidad_id: e.target.value })}>
+              <option value="">Sin unidad</option>
+              {unidades.map((u) => (
+                <option key={u.id} value={u.id}>{u.nombre}</option>
+              ))}
+            </Select>
           </Field>
         </div>
       </Modal>
@@ -1282,14 +1327,16 @@ function SeccionPracticas({ cultivoId }) {
 /* ============ Sección: Costos ============ */
 function SeccionCostos({ cultivoId }) {
   const toast = useToast();
+  const categoriasCosto = useCatalogo("categorias-costo");
+  const unidades = useCatalogo("unidades");
   const [rows, setRows] = useState(null);
   const [modal, setModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    categoria: "Insumos",
+    categoria: "",
     descripcion: "",
     cantidad: "",
-    unidad: "",
+    unidad_id: "",
     monto: "",
     fecha: new Date().toISOString().slice(0, 10),
   });
@@ -1311,10 +1358,10 @@ function SeccionCostos({ cultivoId }) {
 
   const openNew = () => {
     setForm({
-      categoria: "Insumos",
+      categoria: "",
       descripcion: "",
       cantidad: "",
-      unidad: "",
+      unidad_id: "",
       monto: "",
       fecha: new Date().toISOString().slice(0, 10),
     });
@@ -1330,10 +1377,11 @@ function SeccionCostos({ cultivoId }) {
     trazabilidadApi
       .crearCosto({
         cultivo_id: cultivoId,
-        categoria: form.categoria,
+        // El backend resuelve el nombre de la categoría → id.
+        categoria: form.categoria || null,
         descripcion: form.descripcion.trim(),
         cantidad: form.cantidad === "" ? null : +form.cantidad,
-        unidad: form.unidad.trim() || null,
+        unidad_id: form.unidad_id === "" ? null : Number(form.unidad_id),
         monto,
         moneda: "PEN",
         fecha: form.fecha,
@@ -1425,9 +1473,10 @@ function SeccionCostos({ cultivoId }) {
       >
         <Field label="Categoría de costo">
           <Select value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
-            <option>Insumos</option>
-            <option>Mano de obra</option>
-            <option>Agua</option>
+            <option value="">Selecciona…</option>
+            {categoriasCosto.map((c) => (
+              <option key={c.id} value={c.nombre}>{c.nombre}</option>
+            ))}
           </Select>
         </Field>
         <Field label="Descripción" className="mt-[14px]">
@@ -1438,7 +1487,12 @@ function SeccionCostos({ cultivoId }) {
             <Input type="number" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value })} placeholder="0" />
           </Field>
           <Field label="Unidad">
-            <Input value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} placeholder="sacos" />
+            <Select value={form.unidad_id} onChange={(e) => setForm({ ...form, unidad_id: e.target.value })}>
+              <option value="">Sin unidad</option>
+              {unidades.map((u) => (
+                <option key={u.id} value={u.id}>{u.nombre}</option>
+              ))}
+            </Select>
           </Field>
           <Field label="Costo (S/)">
             <Input type="number" value={form.monto} onChange={(e) => setForm({ ...form, monto: e.target.value })} placeholder="0.00" />
@@ -1526,7 +1580,7 @@ function SeccionCuidados({ cultivoId }) {
 
   const toggleActivo = (c) => {
     cuidadosApi
-      .update(c.id, { activo: !c.activo })
+      .update(c.id, { is_active: !c.is_active })
       .then((actualizado) => setRows((prev) => prev.map((r) => (r.id === c.id ? actualizado : r))))
       .catch(() => toast("No se pudo actualizar el cuidado", "danger"));
   };
@@ -1579,7 +1633,7 @@ function SeccionCuidados({ cultivoId }) {
                       </div>
                     </div>
                   </div>
-                  <Toggle on={c.activo} onClick={() => toggleActivo(c)} title={c.activo ? "Activo" : "Pausado"} />
+                  <Toggle on={c.is_active} onClick={() => toggleActivo(c)} title={c.is_active ? "Activo" : "Pausado"} />
                 </div>
 
                 {c.descripcion && (
@@ -1602,8 +1656,8 @@ function SeccionCuidados({ cultivoId }) {
                   <div className="flex items-center gap-1">
                     <IconBtn
                       name="edit"
-                      title={c.activo ? "Editar" : "Reactiva el cuidado para editarlo"}
-                      disabled={!c.activo}
+                      title={c.is_active ? "Editar" : "Reactiva el cuidado para editarlo"}
+                      disabled={!c.is_active}
                       onClick={() => openEdit(c)}
                     />
                     <IconBtn name="trash" title="Eliminar" tone="danger" onClick={() => setToDelete(c)} />
@@ -1760,7 +1814,7 @@ export default function CultivoWorkspace() {
                 {cultivo.biohuerto_nombre}
               </span>
             )}
-            <EtapaBadge etapa={cultivo.etapa} />
+            <EtapaBadge etapa={cultivo.etapa} nombre={cultivo.etapa_nombre} />
           </div>
         </div>
       </div>

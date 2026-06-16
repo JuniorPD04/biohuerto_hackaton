@@ -1,6 +1,8 @@
 import { api } from "./api.js";
 
 const unwrap = (p) => p.then((r) => r.data);
+// Acepta un cultivoId (string) o un objeto de params { cultivo_id, biohuerto_id, estado, ... }
+const asParams = (arg) => (typeof arg === "string" ? { cultivo_id: arg } : arg || {});
 
 export const biohuertosApi = {
   list: () => unwrap(api.get("/api/biohuertos")),
@@ -52,19 +54,19 @@ export const dashboardApi = {
 };
 
 export const monitoreoApi = {
-  list: (cultivoId) => unwrap(api.get("/api/monitoreo", { params: { cultivo_id: cultivoId } })),
+  list: (arg) => unwrap(api.get("/api/monitoreo", { params: asParams(arg) })),
   create: (body) => unwrap(api.post("/api/monitoreo", body)),
 };
 
 export const incidenciasApi = {
-  list: (cultivoId) => unwrap(api.get("/api/incidencias", { params: { cultivo_id: cultivoId } })),
+  list: (arg) => unwrap(api.get("/api/incidencias", { params: asParams(arg) })),
   create: (body) => unwrap(api.post("/api/incidencias", body)),
   update: (id, body) => unwrap(api.patch(`/api/incidencias/${id}`, body)),
   remove: (id) => api.delete(`/api/incidencias/${id}`),
 };
 
 export const cuidadosApi = {
-  list: (cultivoId) => unwrap(api.get("/api/cuidados", { params: { cultivo_id: cultivoId } })),
+  list: (arg) => unwrap(api.get("/api/cuidados", { params: asParams(arg) })),
   create: (body) => unwrap(api.post("/api/cuidados", body)),
   update: (id, body) => unwrap(api.patch(`/api/cuidados/${id}`, body)),
   remove: (id) => api.delete(`/api/cuidados/${id}`),
@@ -104,9 +106,38 @@ export const ragApi = {
 };
 
 export const trazabilidadApi = {
-  practicas: (cultivoId) => unwrap(api.get("/api/trazabilidad/practicas", { params: { cultivo_id: cultivoId } })),
+  practicas: (arg) => unwrap(api.get("/api/trazabilidad/practicas", { params: asParams(arg) })),
   crearPractica: (body) => unwrap(api.post("/api/trazabilidad/practicas", body)),
-  costos: (cultivoId) => unwrap(api.get("/api/trazabilidad/costos", { params: { cultivo_id: cultivoId } })),
+  costos: (arg) => unwrap(api.get("/api/trazabilidad/costos", { params: asParams(arg) })),
   crearCosto: (body) => unwrap(api.post("/api/trazabilidad/costos", body)),
   resumen: (biohuertoId) => unwrap(api.get(`/api/trazabilidad/biohuertos/${biohuertoId}/resumen`)),
+};
+
+// Catálogos (selectores + "agregar nuevo" para los extensibles)
+export const catalogosApi = {
+  list: (catalogo) => unwrap(api.get(`/api/catalogos/${catalogo}`)),
+  create: (catalogo, body) => unwrap(api.post(`/api/catalogos/${catalogo}`, body)),
+};
+
+// Entidades fuente (catálogos maestros): rail + CRUD admin
+export const entidadesApi = {
+  meta: () => unwrap(api.get("/api/entidades")),
+  list: (key) => unwrap(api.get(`/api/entidades/${key}`)),
+  create: (key, body) => unwrap(api.post(`/api/entidades/${key}`, body)),
+  update: (key, id, body) => unwrap(api.patch(`/api/entidades/${key}/${id}`, body)),
+  remove: (key, id) => api.delete(`/api/entidades/${key}/${id}`),
+};
+
+// Control de acceso por rol (matriz de permisos vista × acción)
+export const accesoApi = {
+  matriz: () => unwrap(api.get("/api/acceso/matriz")),
+  setPermisos: (rolId, permisos) =>
+    unwrap(api.put(`/api/acceso/roles/${rolId}/permisos`, { permisos })),
+};
+
+export const campaniasApi = {
+  list: () => unwrap(api.get("/api/campanias")),
+  create: (body) => unwrap(api.post("/api/campanias", body)),
+  update: (id, body) => unwrap(api.patch(`/api/campanias/${id}`, body)),
+  remove: (id) => api.delete(`/api/campanias/${id}`),
 };

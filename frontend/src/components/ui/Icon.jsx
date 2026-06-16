@@ -62,6 +62,11 @@ const PATHS = {
   list: "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01",
   database:
     "M12 3c5 0 9 1.6 9 3.5S17 10 12 10 3 8.4 3 6.5 7 3 12 3Z M3 6.5v5C3 13.4 7 15 12 15s9-1.6 9-3.5v-5 M3 11.5v5C3 18.4 7 20 12 20s9-1.6 9-3.5v-5",
+  shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z",
+  shieldCheck: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z M9 12l2 2 4-4",
+  lock: "M5 11a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-8Z M8 9V6a4 4 0 1 1 8 0v3",
+  store:
+    "M3 9l1.5-5h15L21 9 M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9 M3 9h18 M9 20v-6h6v6",
 };
 
 export default function Icon({ name, size = 20, stroke = 1.8, className, style }) {

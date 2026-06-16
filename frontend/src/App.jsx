@@ -11,6 +11,13 @@ import Fitosanitario from "./pages/Fitosanitario.jsx";
 import Alertas from "./pages/Alertas.jsx";
 import Ofertas from "./pages/Ofertas.jsx";
 import Rag from "./pages/Rag.jsx";
+import Campanias from "./pages/Campanias.jsx";
+import Incidencias from "./pages/Incidencias.jsx";
+import Monitoreo from "./pages/Monitoreo.jsx";
+import Cuidados from "./pages/Cuidados.jsx";
+import Trazabilidad from "./pages/Trazabilidad.jsx";
+import RolesAccesos from "./pages/RolesAccesos.jsx";
+import Entidades from "./pages/Entidades.jsx";
 
 function BootScreen() {
   return (
@@ -54,11 +61,18 @@ export default function App() {
         <Route path="biohuertos" element={<Biohuertos />} />
         <Route path="cultivos" element={<Cultivos />} />
         <Route path="cultivos/:id" element={<CultivoWorkspace />} />
+        <Route path="campanias" element={<Campanias />} />
+        <Route path="monitoreo" element={<Monitoreo />} />
+        <Route path="incidencias" element={<Incidencias />} />
+        <Route path="cuidados" element={<Cuidados />} />
+        <Route path="trazabilidad" element={<Trazabilidad />} />
         <Route path="fitosanitario" element={<Fitosanitario />} />
         <Route path="rag" element={<Rag />} />
         <Route path="alertas" element={<Alertas />} />
         <Route path="ofertas" element={<Navigate to="/ofertas/cosechas" replace />} />
         <Route path="ofertas/:tab" element={<Ofertas />} />
+        <Route path="roles" element={<RolesAccesos />} />
+        <Route path="entidades" element={<Entidades />} />
       </Route>
       <Route path="*" element={<Navigate to="/panel" replace />} />
     </Routes>

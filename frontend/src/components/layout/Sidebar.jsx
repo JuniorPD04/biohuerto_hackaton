@@ -33,7 +33,11 @@ export const MODULES = [
       { id: "publicaciones", label: "Publicaciones", path: "/ofertas/publicaciones" },
     ],
   },
+  { id: "roles", label: "Roles y accesos", icon: "shield", path: "/roles", group: "admin", roles: ["admin"] },
+  { id: "entidades", label: "Entidades", icon: "archive", path: "/entidades", group: "admin", roles: ["admin"] },
 ];
+
+const GROUP_LABELS = { tools: "HERRAMIENTAS", admin: "ADMINISTRACIÓN" };
 
 function ModuleItem({ m }) {
   const location = useLocation();
@@ -143,19 +147,26 @@ export default function Sidebar() {
   const modules = MODULES.filter((m) => !m.roles || m.roles.includes(user?.rol)).map((m) =>
     m.id === "alertas" ? { ...m, badge: unseenCount > 0 ? unseenCount : null } : m
   );
-  const main = modules.filter((m) => m.group === "main");
-  const tools = modules.filter((m) => m.group === "tools");
+  const groupOf = (g) => modules.filter((m) => m.group === g);
   return (
     <nav className="flex flex-col gap-1 px-[14px] py-3">
-      {main.map((m) => (
+      {groupOf("main").map((m) => (
         <ModuleItem key={m.id} m={m} />
       ))}
-      <div className="px-[14px] pb-2 pt-[18px] text-[11px] font-extrabold tracking-[.1em] text-white/[.46]">
-        HERRAMIENTAS
-      </div>
-      {tools.map((m) => (
-        <ModuleItem key={m.id} m={m} />
-      ))}
+      {["tools", "admin"].map((g) => {
+        const items = groupOf(g);
+        if (!items.length) return null;
+        return (
+          <div key={g}>
+            <div className="px-[14px] pb-2 pt-[18px] text-[11px] font-extrabold tracking-[.1em] text-white/[.46]">
+              {GROUP_LABELS[g]}
+            </div>
+            {items.map((m) => (
+              <ModuleItem key={m.id} m={m} />
+            ))}
+          </div>
+        );
+      })}
     </nav>
   );
 }

@@ -15,10 +15,10 @@ router = APIRouter(prefix="/api/cosechas", tags=["cosechas"])
 
 # telefono se descifra en SQL con pgp_sym_decrypt.
 _COSECHA_SELECT = """
-    select co.id, co.cultivo_id, c.especie as cultivo, co.usuario_id,
+    select co.id::text, co.cultivo_id::text, e.nombre as cultivo, co.usuario_id,
            u.nombre as productor,
            pgp_sym_decrypt(u.telefono_encrypted, cast(:enc_key as text)) as productor_telefono,
-           co.nombre_producto, co.cantidad, co.unidad,
+           co.nombre_producto, co.cantidad, co.unidad_id, un.codigo as unidad,
            co.precio_referencial, co.fecha_cosecha, co.link_whatsapp,
            pgp_sym_decrypt(co.telefono_encrypted, cast(:enc_key as text)) as telefono,
            co.estado, co.published_at, co.created_at, co.updated_at,
@@ -28,6 +28,8 @@ _COSECHA_SELECT = """
              order by a.created_at desc limit 1) as cultivo_imagen
     from cosechas co
     left join cultivos c on c.id = co.cultivo_id
+    left join especies e on e.id = c.especie_id
+    left join unidades un on un.id = co.unidad_id
     left join usuarios u on u.id = co.usuario_id
 """
 
@@ -122,12 +124,13 @@ async def create_cosecha(
         text(
             """
             insert into cosechas (
-              cultivo_id, usuario_id, nombre_producto, cantidad, unidad,
+              cultivo_id, usuario_id, nombre_producto, cantidad, unidad_id,
               precio_referencial, fecha_cosecha, link_whatsapp,
               telefono_encrypted, estado, published_at
             )
             values (
-              :cultivo_id, :usuario_id, :nombre_producto, :cantidad, :unidad,
+              :cultivo_id, :usuario_id, :nombre_producto, :cantidad,
+              coalesce(:unidad_id, (select id from unidades where codigo = 'kg')),
               :precio_referencial, :fecha_cosecha, :link_whatsapp,
               case when cast(:telefono as text) is null then null
                    else pgp_sym_encrypt(cast(:telefono as text), cast(:enc_key as text)) end,
@@ -142,7 +145,7 @@ async def create_cosecha(
             "usuario_id": productor_id,
             "nombre_producto": payload.nombre_producto,
             "cantidad": payload.cantidad,
-            "unidad": payload.unidad,
+            "unidad_id": payload.unidad_id,
             "precio_referencial": payload.precio_referencial,
             "fecha_cosecha": payload.fecha_cosecha,
             "link_whatsapp": payload.link_whatsapp,
@@ -184,7 +187,7 @@ async def update_cosecha(
     simple_fields = {
         "nombre_producto",
         "cantidad",
-        "unidad",
+        "unidad_id",
         "precio_referencial",
         "fecha_cosecha",
         "link_whatsapp",

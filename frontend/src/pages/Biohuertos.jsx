@@ -18,7 +18,7 @@ import {
   Toggle,
 } from "../components/ui/primitives.jsx";
 import { tintFor } from "../lib/theme.js";
-import { biohuertosApi } from "../lib/resources.js";
+import { biohuertosApi, catalogosApi } from "../lib/resources.js";
 import { useToast } from "../components/ui/Toast.jsx";
 import {
   useConfirm,
@@ -235,11 +235,27 @@ function Stat({ label, value }) {
 }
 
 // ---- Create / View modal ----
+const ESTADO_OPCIONES = [
+  { value: "nuevo", label: "Nuevo" },
+  { value: "sembrado", label: "Sembrado" },
+  { value: "en_tratamiento", label: "En tratamiento" },
+  { value: "activo", label: "Activo" },
+  { value: "en_descanso", label: "En descanso" },
+  { value: "inactivo", label: "Inactivo" },
+];
+const estadoLabel = (v) =>
+  ESTADO_OPCIONES.find((o) => o.value === v)?.label || v || "—";
+
 const EMPTY_FORM = {
   nombre: "",
   codigo: "",
+  abreviatura: "",
   ubicacion_referencia: "",
   area_m2: "",
+  tipo_area_id: "",
+  estado: "nuevo",
+  latitud: "",
+  longitud: "",
   descripcion: "",
   imagen: "",
 };
@@ -247,15 +263,44 @@ const EMPTY_FORM = {
 function BiohuertoModal({ open, mode, row, onClose, onSave }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [tiposArea, setTiposArea] = useState([]);
+  const [nuevoTipo, setNuevoTipo] = useState(false);
+  const [nuevoTipoNombre, setNuevoTipoNombre] = useState("");
+  const [creandoTipo, setCreandoTipo] = useState(false);
+
+  // Cargar catálogo de tipos de área al abrir el formulario.
+  useEffect(() => {
+    if (!open || mode === "view") return;
+    let cancel = false;
+    (async () => {
+      try {
+        const data = await catalogosApi.list("tipos-area");
+        const items = Array.isArray(data) ? data : data?.items || [];
+        if (!cancel) setTiposArea(items);
+      } catch {
+        if (!cancel) setTiposArea([]);
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [open, mode]);
 
   useEffect(() => {
     if (!open) return;
+    setNuevoTipo(false);
+    setNuevoTipoNombre("");
     if (mode === "edit" && row) {
       setForm({
         nombre: row.nombre || "",
         codigo: row.codigo || "",
+        abreviatura: row.abreviatura || "",
         ubicacion_referencia: row.ubicacion_referencia || "",
         area_m2: row.area_m2 ?? "",
+        tipo_area_id: row.tipo_area_id ?? "",
+        estado: row.estado || "nuevo",
+        latitud: row.latitud ?? "",
+        longitud: row.longitud ?? "",
         descripcion: row.descripcion || "",
         imagen: row.imagen || "",
       });
@@ -264,9 +309,36 @@ function BiohuertoModal({ open, mode, row, onClose, onSave }) {
     }
   }, [open, mode, row]);
 
+  // En modo nuevo, preseleccionar el tipo de área 'biohuerto' por defecto.
+  useEffect(() => {
+    if (mode !== "new" || form.tipo_area_id || tiposArea.length === 0) return;
+    const def =
+      tiposArea.find((t) => t.codigo === "biohuerto") || tiposArea[0];
+    if (def) setForm((f) => ({ ...f, tipo_area_id: def.id }));
+  }, [mode, tiposArea, form.tipo_area_id]);
+
   if (!open) return null;
   const view = mode === "view";
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const crearTipoArea = async () => {
+    const nombre = nuevoTipoNombre.trim();
+    if (!nombre) return;
+    setCreandoTipo(true);
+    try {
+      const creado = await catalogosApi.create("tipos-area", { nombre });
+      const data = await catalogosApi.list("tipos-area");
+      const items = Array.isArray(data) ? data : data?.items || [];
+      setTiposArea(items);
+      const nuevoId =
+        creado?.id ?? items.find((t) => t.nombre === nombre)?.id ?? "";
+      if (nuevoId) setForm((f) => ({ ...f, tipo_area_id: nuevoId }));
+      setNuevoTipo(false);
+      setNuevoTipoNombre("");
+    } finally {
+      setCreandoTipo(false);
+    }
+  };
 
   const submit = async () => {
     setSaving(true);
@@ -274,8 +346,14 @@ function BiohuertoModal({ open, mode, row, onClose, onSave }) {
       const body = {
         nombre: form.nombre,
         codigo: form.codigo,
+        abreviatura: form.abreviatura,
         ubicacion_referencia: form.ubicacion_referencia,
         area_m2: form.area_m2 === "" ? null : Number(form.area_m2),
+        tipo_area_id:
+          form.tipo_area_id === "" ? null : Number(form.tipo_area_id),
+        estado: form.estado,
+        latitud: form.latitud === "" ? null : Number(form.latitud),
+        longitud: form.longitud === "" ? null : Number(form.longitud),
         descripcion: form.descripcion,
       };
       // Solo enviar la imagen si cambió respecto a la guardada (null la elimina).
@@ -334,8 +412,16 @@ function BiohuertoModal({ open, mode, row, onClose, onSave }) {
             <Stat label="Ubicación de referencia" value={row?.ubicacion_referencia || "Sin ubicación"} />
             <Stat label="Área disponible" value={`${row?.area_m2} m²`} />
             <Stat label="Cultivos activos" value={row?.cultivos_count ?? 0} />
-            <Stat label="Responsable" value={row?.responsable_nombre || "Sin responsable"} />
-            <Stat label="Estado" value={row?.is_active ? "Activo" : "Baja"} />
+            <Stat label="Tipo de área" value={row?.tipo_area || "Sin tipo"} />
+            <Stat label="Estado" value={estadoLabel(row?.estado)} />
+            <Stat
+              label="Coordenadas"
+              value={
+                row?.latitud != null && row?.longitud != null
+                  ? `${row.latitud}, ${row.longitud}`
+                  : "Sin coordenadas"
+              }
+            />
           </div>
           <div className="rounded-xl border border-line bg-white px-4 py-[14px]">
             <div className="text-[11.5px] font-extrabold uppercase tracking-[.05em] text-muted-2">
@@ -364,6 +450,89 @@ function BiohuertoModal({ open, mode, row, onClose, onSave }) {
               <Input value={form.codigo} onChange={set("codigo")} placeholder="BV-0XX" />
             </Field>
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Tipo de área">
+              {nuevoTipo ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={nuevoTipoNombre}
+                    onChange={(e) => setNuevoTipoNombre(e.target.value)}
+                    placeholder="Nombre del tipo"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        crearTipoArea();
+                      }
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={crearTipoArea}
+                    disabled={creandoTipo || !nuevoTipoNombre.trim()}
+                  >
+                    {creandoTipo ? "…" : "Guardar"}
+                  </Button>
+                  <IconBtn
+                    name="x"
+                    title="Cancelar"
+                    onClick={() => {
+                      setNuevoTipo(false);
+                      setNuevoTipoNombre("");
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={form.tipo_area_id}
+                    onChange={set("tipo_area_id")}
+                    className="flex-1"
+                  >
+                    <option value="">Selecciona un tipo</option>
+                    {tiposArea.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.nombre}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon="plus"
+                    onClick={() => setNuevoTipo(true)}
+                  >
+                    Nuevo
+                  </Button>
+                </div>
+              )}
+            </Field>
+            <Field label="Estado">
+              <Select value={form.estado} onChange={set("estado")}>
+                {ESTADO_OPCIONES.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Abreviatura">
+              <Input
+                value={form.abreviatura}
+                onChange={set("abreviatura")}
+                placeholder="Ej: LV"
+              />
+            </Field>
+            <Field label="Área disponible (m²)">
+              <Input
+                type="number"
+                value={form.area_m2}
+                onChange={set("area_m2")}
+                placeholder="0"
+              />
+            </Field>
+          </div>
           <Field label="Ubicación de referencia">
             <Input
               value={form.ubicacion_referencia}
@@ -371,14 +540,26 @@ function BiohuertoModal({ open, mode, row, onClose, onSave }) {
               placeholder="Distrito, sector o referencia"
             />
           </Field>
-          <Field label="Área disponible (m²)">
-            <Input
-              type="number"
-              value={form.area_m2}
-              onChange={set("area_m2")}
-              placeholder="0"
-            />
-          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Latitud">
+              <Input
+                type="number"
+                step="0.000001"
+                value={form.latitud}
+                onChange={set("latitud")}
+                placeholder="Opcional"
+              />
+            </Field>
+            <Field label="Longitud">
+              <Input
+                type="number"
+                step="0.000001"
+                value={form.longitud}
+                onChange={set("longitud")}
+                placeholder="Opcional"
+              />
+            </Field>
+          </div>
           <Field label="Descripción">
             <Textarea
               value={form.descripcion}

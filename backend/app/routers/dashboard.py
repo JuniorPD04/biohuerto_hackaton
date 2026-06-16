@@ -37,11 +37,12 @@ async def panel_overview(
     cosechas = await session.execute(
         text(
             f"""
-            select c.id::text as cultivo_id, c.especie, b.nombre as biohuerto,
+            select c.id::text as cultivo_id, e.nombre as especie, b.nombre as biohuerto,
                    c.fecha_estimada_cosecha,
                    (c.fecha_estimada_cosecha - current_date) as dias
             from cultivos c
             join etapas_fenologicas ef on ef.id = c.etapa_id
+            join especies e on e.id = c.especie_id
             left join biohuertos b on b.id = c.biohuerto_id
             where c.deleted_at is null and c.is_active
               and ef.codigo <> 'finalizado'
@@ -144,11 +145,18 @@ async def panel_overview(
     huella = await session.execute(
         text(
             f"""
+            with hagg as (
+              select h.id, h.huella_neta_kg_co2,
+                     coalesce(sum(hc.cantidad) filter (where hc.tipo = 'compost'), 0) as compost
+              from huella_carbono h
+              left join huella_componentes hc on hc.huella_id = h.id
+              where true
+                {cultivo_scope.replace("cultivo_id", "h.cultivo_id")}
+              group by h.id, h.huella_neta_kg_co2
+            )
             select coalesce(sum(huella_neta_kg_co2), 0) as huella,
-                   coalesce(sum(compost_kg), 0) as compost
-            from huella_carbono h
-            where true
-              {cultivo_scope.replace("cultivo_id", "h.cultivo_id")}
+                   coalesce(sum(compost), 0) as compost
+            from hagg
             """
         ),
         uid,
@@ -161,19 +169,30 @@ async def panel_overview(
     sem_huella = await session.execute(
         text(
             f"""
-            select c.id::text as cultivo_id, c.especie, b.nombre as biohuerto,
-                   coalesce(sum(h.compost_kg), 0) + coalesce(sum(h.abono_verde_kg), 0) as compost_kg,
-                   coalesce(sum(h.agua_m3), 0) as agua_m3,
-                   coalesce(sum(h.area_sin_agroquimicos_m2), 0) as area_m2,
-                   coalesce(sum(h.aplicaciones_control_bio), 0) as aplic_ctrl_bio,
-                   coalesce(sum(h.huella_neta_kg_co2), 0) as huella
+            with hagg as (
+              select h.id, h.cultivo_id, h.huella_neta_kg_co2,
+                     coalesce(sum(hc.cantidad) filter (where hc.tipo = 'agua'), 0) as agua,
+                     coalesce(sum(hc.cantidad) filter (where hc.tipo in ('compost','abono_verde')), 0) as compost,
+                     coalesce(sum(hc.cantidad) filter (where hc.tipo = 'sin_agroquim'), 0) as area,
+                     coalesce(sum(hc.cantidad) filter (where hc.tipo = 'ctrl_bio'), 0) as ctrl_bio
+              from huella_carbono h
+              left join huella_componentes hc on hc.huella_id = h.id
+              group by h.id, h.cultivo_id, h.huella_neta_kg_co2
+            )
+            select c.id::text as cultivo_id, e.nombre as especie, b.nombre as biohuerto,
+                   coalesce(sum(ha.compost), 0) as compost_kg,
+                   coalesce(sum(ha.agua), 0) as agua_m3,
+                   coalesce(sum(ha.area), 0) as area_m2,
+                   coalesce(sum(ha.ctrl_bio), 0) as aplic_ctrl_bio,
+                   coalesce(sum(ha.huella_neta_kg_co2), 0) as huella
             from cultivos c
-            join huella_carbono h on h.cultivo_id = c.id
+            join hagg ha on ha.cultivo_id = c.id
+            join especies e on e.id = c.especie_id
             left join biohuertos b on b.id = c.biohuerto_id
             where c.deleted_at is null
               {"and c.usuario_id = :uid" if mine else ""}
-            group by c.id, c.especie, b.nombre
-            order by c.especie
+            group by c.id, e.nombre, b.nombre
+            order by e.nombre
             """
         ),
         uid,
@@ -237,7 +256,7 @@ async def panel_overview(
 
 @router.get("/{biohuerto_id}", response_model=DashboardOut)
 async def get_dashboard(
-    biohuerto_id: int,
+    biohuerto_id: str,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> DashboardOut:

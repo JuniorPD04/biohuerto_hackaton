@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,12 +13,17 @@ from app.schemas.users import CurrentUser
 router = APIRouter(prefix="/api/cuidados", tags=["cuidados"])
 
 _CUIDADO_SELECT = """
-    select c.id, c.cultivo_id, t.nombre as tipo, c.descripcion, c.frecuencia_dias,
-           c.ultima_realizada, c.activo,
+    select c.id::text as id, c.cultivo_id::text as cultivo_id, t.nombre as tipo,
+           c.descripcion, c.frecuencia_dias,
+           c.ultima_realizada, c.is_active,
            coalesce(c.ultima_realizada, c.created_at) + (c.frecuencia_dias || ' days')::interval as proxima_fecha,
-           c.activo and coalesce(c.ultima_realizada, c.created_at) + (c.frecuencia_dias || ' days')::interval <= now() as vencido
+           c.is_active and coalesce(c.ultima_realizada, c.created_at) + (c.frecuencia_dias || ' days')::interval <= now() as vencido,
+           e.nombre as cultivo, b.id::text as biohuerto_id, b.nombre as biohuerto
     from cuidados c
     join tipos_alerta t on t.id = c.tipo_id
+    left join cultivos cu on cu.id = c.cultivo_id
+    left join especies e on e.id = cu.especie_id
+    left join biohuertos b on b.id = cu.biohuerto_id
 """
 
 
@@ -55,20 +60,27 @@ async def _get_one(session: AsyncSession, cuidado_id: UUID, current_user: Curren
 
 @router.get("", response_model=list[CuidadoOut])
 async def list_cuidados(
-    cultivo_id: UUID,
+    cultivo_id: UUID | None = Query(default=None),
+    biohuerto_id: str | None = Query(default=None),
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[CuidadoOut]:
-    await _ensure_cultivo_access(session, cultivo_id, current_user)
+    where = ["c.deleted_at is null"]
+    params: dict = {}
+    if cultivo_id is not None:
+        await _ensure_cultivo_access(session, cultivo_id, current_user)
+        where.append("c.cultivo_id = :cultivo_id")
+        params["cultivo_id"] = cultivo_id
+    if biohuerto_id:
+        where.append("cu.biohuerto_id = :biohuerto_id")
+        params["biohuerto_id"] = biohuerto_id
     result = await session.execute(
         text(
             _CUIDADO_SELECT
-            + """
-            where c.cultivo_id = :cultivo_id and c.deleted_at is null
-            order by c.created_at desc
-            """
+            + " where " + " and ".join(where)
+            + " order by c.created_at desc"
         ),
-        {"cultivo_id": cultivo_id},
+        params,
     )
     return [_to_cuidado_out(row) for row in result.mappings().all()]
 
@@ -112,9 +124,9 @@ async def update_cuidado(
     values = payload.model_dump(exclude_unset=True)
     if not values:
         return current
-    # Un cuidado dado de baja / pausado (activo = false) no se puede editar: solo
-    # se admite el cambio que lo reactiva (activo = true).
-    if not current.activo and values.get("activo") is not True:
+    # Un cuidado dado de baja / pausado (is_active = false) no se puede editar: solo
+    # se admite el cambio que lo reactiva (is_active = true).
+    if not current.is_active and values.get("is_active") is not True:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="No se puede editar un cuidado dado de baja. Reactívalo primero.",
@@ -125,7 +137,7 @@ async def update_cuidado(
     if "tipo" in values:
         params["tipo_id"] = await _resolve_tipo_id(session, values["tipo"])
         clauses.append("tipo_id = :tipo_id")
-    for field in ("descripcion", "frecuencia_dias", "activo"):
+    for field in ("descripcion", "frecuencia_dias", "is_active"):
         if field in values:
             params[field] = values[field]
             clauses.append(f"{field} = :{field}")

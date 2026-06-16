@@ -14,9 +14,11 @@ from app.services.attachments import set_principal_image
 router = APIRouter(prefix="/api/cultivos", tags=["cultivos"])
 
 _CULTIVO_SELECT = """
-    select c.id, c.biohuerto_id, b.nombre as biohuerto_nombre, c.usuario_id,
-           c.especie, c.variedad, ef.codigo as etapa, ef.nombre as etapa_nombre,
-           c.fecha_siembra, c.fecha_estimada_cosecha, c.cantidad, c.unidad_cantidad,
+    select c.id::text, c.biohuerto_id::text, b.nombre as biohuerto_nombre, c.usuario_id,
+           e.nombre as especie, c.especie_id, c.variedad,
+           ef.codigo as etapa, ef.nombre as etapa_nombre,
+           c.fecha_siembra, c.fecha_estimada_cosecha, c.cantidad,
+           un.codigo as unidad, c.unidad_id,
            c.area_m2, cmp.nombre as campania, c.notas, c.is_active,
            (select 'data:' || a.mime_type || ';base64,' || replace(encode(a.datos, 'base64'), E'\n', '')
               from archivos_adjuntos a
@@ -25,6 +27,8 @@ _CULTIVO_SELECT = """
            c.created_at, c.updated_at
     from cultivos c
     join etapas_fenologicas ef on ef.id = c.etapa_id
+    join especies e on e.id = c.especie_id
+    left join unidades un on un.id = c.unidad_id
     left join biohuertos b on b.id = c.biohuerto_id
     left join campanias cmp on cmp.id = c.campania_id
 """
@@ -46,8 +50,6 @@ async def _ensure_cultivo_access(session: AsyncSession, cultivo_id: UUID, curren
     row = await _fetch_cultivo_row(session, cultivo_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cultivo no encontrado")
-    if current_user.rol != "admin" and row["usuario_id"] != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes acceder a este cultivo")
     return row
 
 
@@ -74,10 +76,11 @@ async def _ensure_cosecha_for_cultivo(session: AsyncSession, cultivo_id: UUID) -
         text(
             """
             insert into cosechas
-                (cultivo_id, usuario_id, nombre_producto, cantidad, unidad,
+                (cultivo_id, usuario_id, nombre_producto, cantidad, unidad_id,
                  precio_referencial, fecha_cosecha, estado)
             values
-                (:cultivo_id, :usuario_id, :nombre, :cantidad, :unidad,
+                (:cultivo_id, :usuario_id, :nombre, :cantidad,
+                 coalesce(:unidad_id, (select id from unidades where codigo = 'und')),
                  0, coalesce(:fecha, current_date), 'disponible')
             """
         ),
@@ -86,7 +89,7 @@ async def _ensure_cosecha_for_cultivo(session: AsyncSession, cultivo_id: UUID) -
             "usuario_id": row["usuario_id"],
             "nombre": nombre,
             "cantidad": row["cantidad"] if row["cantidad"] is not None else 0,
-            "unidad": row["unidad_cantidad"] or "kg",
+            "unidad_id": row["unidad_id"],
             "fecha": row["fecha_estimada_cosecha"],
         },
     )
@@ -94,16 +97,13 @@ async def _ensure_cosecha_for_cultivo(session: AsyncSession, cultivo_id: UUID) -
 
 @router.get("", response_model=list[CultivoOut])
 async def list_cultivos(
-    biohuerto_id: int | None = None,
+    biohuerto_id: str | None = None,
     etapa: str | None = None,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[CultivoOut]:
     params: dict = {}
     filters = ["c.deleted_at is null"]
-    if current_user.rol != "admin":
-        filters.append("c.usuario_id = :usuario_id")
-        params["usuario_id"] = current_user.id
     if biohuerto_id is not None:
         filters.append("c.biohuerto_id = :biohuerto_id")
         params["biohuerto_id"] = biohuerto_id
@@ -129,15 +129,17 @@ async def create_cultivo(
         text(
             """
             insert into cultivos (
-              biohuerto_id, usuario_id, etapa_id, campania_id, especie, variedad,
-              fecha_siembra, fecha_estimada_cosecha, cantidad, unidad_cantidad, area_m2, notas
+              biohuerto_id, usuario_id, etapa_id, campania_id, especie_id, variedad,
+              fecha_siembra, fecha_estimada_cosecha, cantidad, unidad_id, area_m2, notas
             )
             values (
               :biohuerto_id, :usuario_id,
               (select id from etapas_fenologicas where codigo = :etapa),
               (select id from campanias where nombre = :campania),
-              :especie, :variedad, :fecha_siembra, :fecha_estimada_cosecha,
-              :cantidad, :unidad_cantidad, :area_m2, :notas
+              :especie_id, :variedad, :fecha_siembra, :fecha_estimada_cosecha,
+              :cantidad,
+              coalesce(:unidad_id, (select id from unidades where codigo = 'und')),
+              :area_m2, :notas
             )
             returning id
             """
@@ -147,12 +149,12 @@ async def create_cultivo(
             "usuario_id": current_user.id,
             "etapa": payload.etapa,
             "campania": payload.campania,
-            "especie": payload.especie,
+            "especie_id": payload.especie_id,
             "variedad": payload.variedad,
             "fecha_siembra": payload.fecha_siembra,
             "fecha_estimada_cosecha": payload.fecha_estimada_cosecha,
             "cantidad": payload.cantidad,
-            "unidad_cantidad": payload.unidad_cantidad,
+            "unidad_id": payload.unidad_id,
             "area_m2": payload.area_m2,
             "notas": payload.notas,
         },
@@ -200,12 +202,12 @@ async def update_cultivo(
     clauses: list[str] = []
     simple_fields = {
         "biohuerto_id",
-        "especie",
+        "especie_id",
         "variedad",
         "fecha_siembra",
         "fecha_estimada_cosecha",
         "cantidad",
-        "unidad_cantidad",
+        "unidad_id",
         "area_m2",
         "notas",
         "is_active",

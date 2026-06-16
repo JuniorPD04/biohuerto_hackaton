@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,11 +22,17 @@ _LUMINOSIDAD_NIVEL_CASE = """
 """
 
 _MONITOREO_SELECT = f"""
-    select m.id, m.cultivo_id, m.fuente, m.sensor_codigo, m.registrado_en,
+    select m.id::text as id, m.cultivo_id::text as cultivo_id, fm.codigo as fuente,
+           m.sensor_codigo, m.registrado_en,
            m.humedad_pct, m.temperatura_c, m.luminosidad_lux, m.ph_suelo,
            m.observacion,
-           {_LUMINOSIDAD_NIVEL_CASE}
+           {_LUMINOSIDAD_NIVEL_CASE},
+           e.nombre as cultivo, b.id::text as biohuerto_id, b.nombre as biohuerto
     from monitoreo_registros m
+    left join fuentes_monitoreo fm on fm.id = m.fuente_id
+    left join cultivos cu on cu.id = m.cultivo_id
+    left join especies e on e.id = cu.especie_id
+    left join biohuertos b on b.id = cu.biohuerto_id
 """
 
 
@@ -47,11 +53,12 @@ async def create_monitoreo(
             f"""
             with inserted as (
               insert into monitoreo_registros (
-                cultivo_id, fuente, usuario_id, humedad_pct, temperatura_c,
+                cultivo_id, fuente_id, usuario_id, humedad_pct, temperatura_c,
                 luminosidad_lux, ph_suelo, observacion
               )
               values (
-                :cultivo_id, 'manual', :usuario_id, :humedad_pct, :temperatura_c,
+                :cultivo_id, (select id from fuentes_monitoreo where codigo = 'manual'),
+                :usuario_id, :humedad_pct, :temperatura_c,
                 :luminosidad_lux, :ph_suelo, :observacion
               )
               returning id
@@ -77,20 +84,26 @@ async def create_monitoreo(
 
 @router.get("", response_model=list[MonitoreoOut])
 async def list_monitoreo(
-    cultivo_id: UUID,
+    cultivo_id: UUID | None = Query(default=None),
+    biohuerto_id: str | None = Query(default=None),
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[MonitoreoOut]:
-    await _ensure_cultivo_access(session, cultivo_id, current_user)
+    where = ["m.deleted_at is null"]
+    params: dict = {}
+    if cultivo_id is not None:
+        await _ensure_cultivo_access(session, cultivo_id, current_user)
+        where.append("m.cultivo_id = :cultivo_id")
+        params["cultivo_id"] = cultivo_id
+    if biohuerto_id:
+        where.append("cu.biohuerto_id = :biohuerto_id")
+        params["biohuerto_id"] = biohuerto_id
     result = await session.execute(
         text(
             _MONITOREO_SELECT
-            + """
-            where m.cultivo_id = :cultivo_id and m.deleted_at is null
-            order by m.registrado_en desc
-            limit 50
-            """
+            + " where " + " and ".join(where)
+            + " order by m.registrado_en desc limit 50"
         ),
-        {"cultivo_id": cultivo_id},
+        params,
     )
     return [_to_monitoreo_out(row) for row in result.mappings().all()]
