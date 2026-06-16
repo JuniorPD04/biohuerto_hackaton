@@ -9,7 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_session
 from app.dependencies import get_current_user, require_role
-from app.schemas.biohuertos import BiohuertoCreate, BiohuertoOut, BiohuertoUpdate
+from app.schemas.biohuertos import (
+    BiohuertoCreate,
+    BiohuertoOut,
+    BiohuertoPropietarioCreate,
+    BiohuertoPropietarioOut,
+    BiohuertoUpdate,
+)
 from app.schemas.users import CurrentUser
 from app.services.attachments import set_principal_image
 
@@ -64,7 +70,7 @@ _BIOHUERTO_SELECT = """
            pgp_sym_decrypt(b.ubicacion_referencia_encrypted, cast(:enc_key as text)) as ubicacion_referencia,
            b.area_m2, b.descripcion,
            b.tipo_area_id, ta.nombre as tipo_area,
-           b.latitud, b.longitud, b.estado, b.is_active,
+           b.latitud, b.longitud, b.estado, b.grid_filas, b.grid_columnas, b.es_publico, b.is_active,
            b.created_at, b.updated_at,
            (select count(*) from cultivos c
              where c.biohuerto_id = b.id and c.deleted_at is null and c.is_active) as cultivos_count,
@@ -78,13 +84,40 @@ _BIOHUERTO_SELECT = """
 
 
 def _to_out(row) -> BiohuertoOut:
-    return BiohuertoOut.model_validate(dict(row))
+    data = dict(row)
+    data["id"] = str(data["id"])
+    return BiohuertoOut.model_validate(data)
 
 
 async def _ensure_biohuerto_access(session: AsyncSession, biohuerto_id: str, current_user: CurrentUser):
+    filters = ["b.id = :id", "b.deleted_at is null"]
+    params = {"id": biohuerto_id}
+    if current_user.rol == "productor":
+        filters.append(
+            """
+            (
+              b.es_publico = true
+              or exists (
+                select 1
+                from biohuerto_propietarios bp
+                where bp.biohuerto_id = b.id
+                  and bp.propietario_id = :user_id
+                  and bp.is_active = true
+                  and bp.deleted_at is null
+              )
+            )
+            """
+        )
+        params["user_id"] = current_user.id
+    elif current_user.rol != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes acceder a este biohuerto")
+
     result = await session.execute(
-        text("select is_active from biohuertos where id = :id and deleted_at is null"),
-        {"id": biohuerto_id},
+        text(
+            "select b.is_active, b.grid_filas, b.grid_columnas "
+            "from biohuertos b where " + " and ".join(filters)
+        ),
+        params,
     )
     row = result.mappings().first()
     if row is None:
@@ -99,6 +132,25 @@ async def list_biohuertos(
 ) -> list[BiohuertoOut]:
     params = {"enc_key": get_settings().pgcrypto_key}
     where = "where b.deleted_at is null"
+    if current_user.rol == "productor":
+        where += (
+            """
+            and (
+              b.es_publico = true
+              or exists (
+                select 1
+                from biohuerto_propietarios bp
+                where bp.biohuerto_id = b.id
+                  and bp.propietario_id = :user_id
+                  and bp.is_active = true
+                  and bp.deleted_at is null
+              )
+            )
+            """
+        )
+        params["user_id"] = current_user.id
+    elif current_user.rol != "admin":
+        where += " and false"
     result = await session.execute(
         text(_BIOHUERTO_SELECT + where + " order by b.created_at desc, b.id desc"),
         params,
@@ -124,14 +176,14 @@ async def create_biohuerto(
         insert into biohuertos
             (tipo_area_id, nombre, codigo, abreviatura,
              ubicacion_referencia_encrypted, latitud, longitud, area_m2,
-             descripcion, estado)
+             descripcion, estado, grid_filas, grid_columnas, es_publico)
         values (
             coalesce(:tipo_area_id, (select id from tipos_area where codigo = 'biohuerto')),
             :nombre, :codigo, :abreviatura,
             case when cast(:ubicacion as text) is null then null
                  else pgp_sym_encrypt(cast(:ubicacion as text), cast(:enc_key as text)) end,
             :latitud, :longitud, :area_m2,
-            :descripcion, coalesce(:estado, 'nuevo')
+            :descripcion, coalesce(:estado, 'nuevo'), :grid_filas, :grid_columnas, :es_publico
         )
         returning id
         """
@@ -146,6 +198,9 @@ async def create_biohuerto(
         "area_m2": payload.area_m2,
         "descripcion": payload.descripcion,
         "estado": payload.estado,
+        "grid_filas": payload.grid_filas,
+        "grid_columnas": payload.grid_columnas,
+        "es_publico": payload.es_publico,
         "enc_key": enc_key,
     }
 
@@ -155,6 +210,19 @@ async def create_biohuerto(
         try:
             result = await session.execute(insert_sql, {**base, "codigo": codigo})
             new_id = str(result.scalar_one())
+            # Un productor que crea su biohuerto queda como propietario.
+            if current_user.rol == "productor":
+                await session.execute(
+                    text(
+                        """
+                        insert into biohuerto_propietarios (biohuerto_id, propietario_id, rol)
+                        values (:biohuerto_id, :propietario_id, 'propietario')
+                        on conflict (biohuerto_id, propietario_id) do update
+                        set is_active = true, deleted_at = null
+                        """
+                    ),
+                    {"biohuerto_id": new_id, "propietario_id": current_user.id},
+                )
             await set_principal_image(
                 session, column="biohuerto_id", entity_id=new_id, data_url=payload.imagen
             )
@@ -162,6 +230,7 @@ async def create_biohuerto(
             break
         except IntegrityError:
             await session.rollback()
+            new_id = None
             preferido = None  # tras un choque (carrera), pasa a numeración automática
             continue
     if new_id is None:
@@ -188,6 +257,99 @@ async def get_biohuerto(
 ) -> BiohuertoOut:
     await _ensure_biohuerto_access(session, biohuerto_id, current_user)
     return await _get_one(session, biohuerto_id)
+
+
+@router.get("/{biohuerto_id}/propietarios", response_model=list[BiohuertoPropietarioOut])
+async def list_propietarios(
+    biohuerto_id: str,
+    current_user: CurrentUser = Depends(require_role("admin")),
+    session: AsyncSession = Depends(get_session),
+) -> list[BiohuertoPropietarioOut]:
+    await _ensure_biohuerto_access(session, biohuerto_id, current_user)
+    result = await session.execute(
+        text(
+            """
+            select bp.propietario_id, u.nombre, u.email,
+                   pgp_sym_decrypt(u.telefono_encrypted, cast(:enc_key as text)) as telefono,
+                   r.codigo as rol_usuario, bp.rol, bp.created_at as assigned_at
+            from biohuerto_propietarios bp
+            join usuarios u on u.id = bp.propietario_id
+            join roles r on r.id = u.rol_id
+            where bp.biohuerto_id = :biohuerto_id
+              and bp.is_active = true
+              and bp.deleted_at is null
+              and u.deleted_at is null
+            order by u.nombre asc
+            """
+        ),
+        {"biohuerto_id": biohuerto_id, "enc_key": get_settings().pgcrypto_key},
+    )
+    return [BiohuertoPropietarioOut.model_validate(dict(row)) for row in result.mappings().all()]
+
+
+@router.post("/{biohuerto_id}/propietarios", response_model=BiohuertoPropietarioOut, status_code=status.HTTP_201_CREATED)
+async def assign_propietario(
+    biohuerto_id: str,
+    payload: BiohuertoPropietarioCreate,
+    current_user: CurrentUser = Depends(require_role("admin")),
+    session: AsyncSession = Depends(get_session),
+) -> BiohuertoPropietarioOut:
+    await _ensure_biohuerto_access(session, biohuerto_id, current_user)
+    user_result = await session.execute(
+        text(
+            """
+            select u.id
+            from usuarios u
+            join roles r on r.id = u.rol_id
+            where u.id = :user_id
+              and u.is_active = true
+              and u.deleted_at is null
+              and r.codigo in ('productor', 'admin')
+            """
+        ),
+        {"user_id": payload.propietario_id},
+    )
+    if user_result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Solo se pueden asignar usuarios activos con rol productor o admin.",
+        )
+    await session.execute(
+        text(
+            """
+            insert into biohuerto_propietarios (biohuerto_id, propietario_id, rol)
+            values (:biohuerto_id, :propietario_id, :rol)
+            on conflict (biohuerto_id, propietario_id) do update
+            set rol = excluded.rol, is_active = true, deleted_at = null
+            """
+        ),
+        {"biohuerto_id": biohuerto_id, "propietario_id": payload.propietario_id, "rol": payload.rol},
+    )
+    await session.commit()
+    propietarios = await list_propietarios(biohuerto_id, current_user, session)
+    return next((p for p in propietarios if p.propietario_id == payload.propietario_id), propietarios[-1])
+
+
+@router.delete("/{biohuerto_id}/propietarios/{propietario_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_propietario(
+    biohuerto_id: str,
+    propietario_id: int,
+    current_user: CurrentUser = Depends(require_role("admin")),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    await _ensure_biohuerto_access(session, biohuerto_id, current_user)
+    await session.execute(
+        text(
+            """
+            update biohuerto_propietarios
+            set is_active = false, deleted_at = now()
+            where biohuerto_id = :biohuerto_id and propietario_id = :propietario_id
+            """
+        ),
+        {"biohuerto_id": biohuerto_id, "propietario_id": propietario_id},
+    )
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch("/{biohuerto_id}", response_model=BiohuertoOut)
@@ -254,6 +416,15 @@ async def update_biohuerto(
     if "estado" in values:
         params["estado"] = values["estado"]
         clauses.append("estado = :estado")
+    if "grid_filas" in values:
+        params["grid_filas"] = values["grid_filas"]
+        clauses.append("grid_filas = :grid_filas")
+    if "grid_columnas" in values:
+        params["grid_columnas"] = values["grid_columnas"]
+        clauses.append("grid_columnas = :grid_columnas")
+    if "es_publico" in values:
+        params["es_publico"] = values["es_publico"]
+        clauses.append("es_publico = :es_publico")
     if "is_active" in values:
         params["is_active"] = values["is_active"]
         clauses.append("is_active = :is_active")

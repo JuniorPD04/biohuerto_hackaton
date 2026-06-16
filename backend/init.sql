@@ -322,6 +322,8 @@ CREATE TABLE biohuertos (
   area_m2        NUMERIC(10,2) NOT NULL CHECK (area_m2 > 0),
   estado         VARCHAR(20)   NOT NULL DEFAULT 'nuevo'
                  CHECK (estado IN ('nuevo','sembrado','en_tratamiento','activo','en_descanso','inactivo')),
+  grid_filas     SMALLINT      NOT NULL DEFAULT 4 CHECK (grid_filas BETWEEN 1 AND 30),
+  grid_columnas  SMALLINT      NOT NULL DEFAULT 4 CHECK (grid_columnas BETWEEN 1 AND 30),
   is_active      BOOLEAN       NOT NULL DEFAULT TRUE,
   last_synced_at TIMESTAMPTZ   NULL,
   is_synced      BOOLEAN       NOT NULL DEFAULT TRUE,
@@ -413,6 +415,8 @@ CREATE TABLE cultivos (
   cantidad               NUMERIC(10,2) NULL CHECK (cantidad IS NULL OR cantidad >= 0),
   unidad_id              SMALLINT      NOT NULL REFERENCES unidades(id),
   area_m2                NUMERIC(10,2) NULL CHECK (area_m2 IS NULL OR area_m2 > 0),
+  celda_fila             SMALLINT      NULL CHECK (celda_fila IS NULL OR celda_fila BETWEEN 1 AND 30),
+  celda_columna          SMALLINT      NULL CHECK (celda_columna IS NULL OR celda_columna BETWEEN 1 AND 30),
   notas                  TEXT          NULL,
   is_active              BOOLEAN       NOT NULL DEFAULT TRUE,
   last_synced_at         TIMESTAMPTZ   NULL,
@@ -422,12 +426,24 @@ CREATE TABLE cultivos (
   deleted_at             TIMESTAMPTZ   NULL
 );
 
--- 4.2  Ahora que cultivos existe, agregamos las FKs diferidas
+-- 4.2  Celdas ocupadas por cultivo dentro del mapa del biohuerto
+CREATE TABLE cultivo_celdas (
+  id           BIGSERIAL     PRIMARY KEY,
+  cultivo_id   UUID          NOT NULL REFERENCES cultivos(id) ON DELETE CASCADE,
+  biohuerto_id UUID          NOT NULL REFERENCES biohuertos(id) ON DELETE CASCADE,
+  fila         SMALLINT      NOT NULL CHECK (fila BETWEEN 1 AND 30),
+  columna      SMALLINT      NOT NULL CHECK (columna BETWEEN 1 AND 30),
+  created_at   TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  deleted_at   TIMESTAMPTZ   NULL,
+  UNIQUE (cultivo_id, fila, columna)
+);
+
+-- 4.3  Ahora que cultivos existe, agregamos las FKs diferidas
 ALTER TABLE archivos_adjuntos
   ADD CONSTRAINT fk_adj_cultivo     FOREIGN KEY (cultivo_id)
     REFERENCES cultivos(id)     ON DELETE CASCADE;
 
--- 4.3  Historial de etapas por cultivo
+-- 4.4  Historial de etapas por cultivo
 CREATE TABLE cultivos_historial_etapas (
   id          BIGSERIAL    PRIMARY KEY,
   cultivo_id  UUID         NOT NULL REFERENCES cultivos(id) ON DELETE CASCADE,
@@ -923,6 +939,16 @@ CREATE INDEX idx_cultivos_especie     ON cultivos(especie_id);
 CREATE INDEX idx_cultivos_usuario     ON cultivos(usuario_id);
 CREATE INDEX idx_cultivos_active      ON cultivos(is_active);
 CREATE INDEX idx_cultivos_siembra     ON cultivos(fecha_siembra);
+CREATE UNIQUE INDEX uq_cultivos_biohuerto_celda_activa
+  ON cultivos(biohuerto_id, celda_fila, celda_columna)
+  WHERE celda_fila IS NOT NULL
+    AND celda_columna IS NOT NULL
+    AND is_active = TRUE
+    AND deleted_at IS NULL;
+
+CREATE UNIQUE INDEX uq_cultivo_celdas_biohuerto_celda_activa
+  ON cultivo_celdas(biohuerto_id, fila, columna)
+  WHERE deleted_at IS NULL;
 CREATE INDEX idx_historial_cultivo    ON cultivos_historial_etapas(cultivo_id);
 CREATE INDEX idx_asignaciones_cultivo   ON cultivo_asignaciones(cultivo_id);
 CREATE INDEX idx_asignaciones_productor ON cultivo_asignaciones(productor_id);

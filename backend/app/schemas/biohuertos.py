@@ -27,6 +27,9 @@ class BiohuertoCreate(BaseModel):
     latitud: Decimal | None = Field(default=None, max_digits=9, decimal_places=6)
     longitud: Decimal | None = Field(default=None, max_digits=9, decimal_places=6)
     estado: str | None = Field(default=None, max_length=20)
+    grid_filas: int = Field(default=4, ge=1, le=30)
+    grid_columnas: int = Field(default=4, ge=1, le=30)
+    es_publico: bool = False
     imagen: str | None = None  # data URL (data:image/...;base64,...) opcional
 
     @field_validator("nombre", "codigo", "abreviatura", "ubicacion_referencia", "descripcion", mode="before")
@@ -51,6 +54,9 @@ class BiohuertoUpdate(BaseModel):
     latitud: Decimal | None = Field(default=None, max_digits=9, decimal_places=6)
     longitud: Decimal | None = Field(default=None, max_digits=9, decimal_places=6)
     estado: str | None = Field(default=None, max_length=20)
+    grid_filas: int | None = Field(default=None, ge=1, le=30)
+    grid_columnas: int | None = Field(default=None, ge=1, le=30)
+    es_publico: bool | None = None
     is_active: bool | None = None
     imagen: str | None = None  # data URL nuevo, "" / null para quitar la imagen
 
@@ -78,10 +84,35 @@ class BiohuertoOut(BaseModel):
     latitud: Decimal | None = None
     longitud: Decimal | None = None
     estado: str | None = None
+    grid_filas: int = 4
+    grid_columnas: int = 4
+    es_publico: bool = False
     cultivos_count: int = 0
     is_active: bool = True
     imagen: str | None = None
     created_at: datetime
     updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BiohuertoPropietarioCreate(BaseModel):
+    propietario_id: int
+    rol: str = Field(default="propietario", max_length=30)
+
+    @field_validator("rol", mode="before")
+    @classmethod
+    def sanitize_rol(cls, value: str | None) -> str:
+        return clean_text(value) or "propietario"
+
+
+class BiohuertoPropietarioOut(BaseModel):
+    propietario_id: int
+    nombre: str
+    email: str
+    telefono: str | None = None
+    rol_usuario: str
+    rol: str
+    assigned_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

@@ -5,29 +5,32 @@ import { alertasApi } from "../../lib/resources.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 
 export const MODULES = [
-  { id: "panel", label: "Panel", icon: "grid", path: "/panel", group: "main" },
+  { id: "panel", label: "Panel", icon: "grid", path: "/panel", group: "main", perm: "dashboard" },
+  { id: "mercado", label: "Mercado", icon: "store", path: "/mercado", group: "main", perm: "mercado.productos" },
   {
     id: "usuarios",
     label: "Usuarios",
     icon: "users",
     path: "/usuarios",
     group: "main",
+    perm: "usuarios.gestion",
     subs: [
       { id: "productores", label: "Productores", path: "/usuarios/productores" },
       { id: "consumidores", label: "Consumidores", path: "/usuarios/consumidores" },
     ],
   },
-  { id: "biohuertos", label: "Biohuertos", icon: "sprout", path: "/biohuertos", group: "main" },
-  { id: "cultivos", label: "Cultivos", icon: "leaf", path: "/cultivos", group: "main" },
-  { id: "fitosanitario", label: "Fitosanitario", icon: "stethoscope", path: "/fitosanitario", group: "tools" },
+  { id: "biohuertos", label: "Biohuertos", icon: "sprout", path: "/biohuertos", group: "main", perm: "biohuertos.gestion" },
+  { id: "cultivos", label: "Cultivos", icon: "leaf", path: "/cultivos", group: "main", perm: "cultivos.gestion" },
+  { id: "fitosanitario", label: "Fitosanitario", icon: "stethoscope", path: "/fitosanitario", group: "tools", perm: "diagnosticos.gestion" },
   { id: "rag", label: "RAG", icon: "database", path: "/rag", group: "tools", roles: ["admin"] },
-  { id: "alertas", label: "Alertas", icon: "bell", path: "/alertas", group: "tools" },
+  { id: "alertas", label: "Alertas", icon: "bell", path: "/alertas", group: "tools", perm: "alertas.gestion" },
   {
     id: "ofertas",
     label: "Ofertas",
     icon: "basket",
     path: "/ofertas",
     group: "tools",
+    perm: "cosechas.gestion",
     subs: [
       { id: "cosechas", label: "Gestión de Cosechas", path: "/ofertas/cosechas" },
       { id: "publicaciones", label: "Publicaciones", path: "/ofertas/publicaciones" },
@@ -122,7 +125,7 @@ function ModuleItem({ m }) {
 
 export default function Sidebar() {
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, permissions } = useAuth();
   const [unseenCount, setUnseenCount] = useState(0);
 
   const refreshUnseen = async () => {
@@ -144,7 +147,12 @@ export default function Sidebar() {
     return () => window.removeEventListener("alertas:vista", onSeen);
   }, []);
 
-  const modules = MODULES.filter((m) => !m.roles || m.roles.includes(user?.rol)).map((m) =>
+  const canSee = (m) => {
+    if (m.roles && !m.roles.includes(user?.rol)) return false;
+    if (!m.perm) return true;
+    return Boolean(permissions?.permisos?.[m.perm]?.length);
+  };
+  const modules = MODULES.filter(canSee).map((m) =>
     m.id === "alertas" ? { ...m, badge: unseenCount > 0 ? unseenCount : null } : m
   );
   const groupOf = (g) => modules.filter((m) => m.group === g);

@@ -200,6 +200,27 @@ async def admin_update_user(
             status_code=status.HTTP_409_CONFLICT,
             detail="No se puede editar un usuario dado de baja. Reactívalo primero.",
         )
+    if values.get("rol") and values["rol"] != current.rol:
+        if current.rol == "admin" and values["rol"] != "admin":
+            admin_count = (
+                await session.execute(
+                    text(
+                        """
+                        select count(*)
+                        from usuarios u
+                        join roles r on r.id = u.rol_id
+                        where r.codigo = 'admin'
+                          and u.is_active = true
+                          and u.deleted_at is null
+                        """
+                    )
+                )
+            ).scalar_one()
+            if admin_count <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="No se puede cambiar el rol del ultimo administrador activo.",
+                )
 
     enc_key = get_settings().pgcrypto_key
     params: dict = {"user_id": user_id, "enc_key": enc_key}
@@ -207,6 +228,9 @@ async def admin_update_user(
     if "is_active" in values:
         params["is_active"] = values["is_active"]
         clauses.append("is_active = :is_active")
+    if "rol" in values:
+        params["rol"] = values["rol"]
+        clauses.append("rol_id = (select id from roles where codigo = :rol)")
     if "nombre" in values:
         params["nombre"] = values["nombre"]
         clauses.append("nombre = :nombre")

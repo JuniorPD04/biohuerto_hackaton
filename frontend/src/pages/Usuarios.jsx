@@ -109,6 +109,23 @@ export default function Usuarios() {
     }
   };
 
+  const habilitarProductor = async (u) => {
+    const ok = await confirm({
+      tone: "primary",
+      question: `Habilitar a ${u.nombre} como productor?`,
+      message: "Este usuario dejara de ser cliente y podra acceder a las vistas de productor segun permisos.",
+      confirmLabel: "Habilitar",
+    });
+    if (!ok) return;
+    try {
+      await usuariosApi.update(u.id, { rol: "productor" });
+      toast("Usuario habilitado como productor");
+      load();
+    } catch (err) {
+      toast(err?.response?.data?.detail || "No se pudo habilitar al productor", "danger");
+    }
+  };
+
   // Reiniciar filtros al cambiar de pestaña.
   useEffect(() => { setQ(""); setEstadoF(""); }, [tab]);
 
@@ -173,6 +190,14 @@ export default function Usuarios() {
                 <Cell align="right">
                   <div style={{ display: "flex", gap: 8, marginLeft: "auto", alignItems: "center" }}>
                     <IconBtn name="eye" title="Ver detalle" onClick={() => setView(u)} />
+                    {u.rol === "consumidor" && (
+                      <IconBtn
+                        name="shieldCheck"
+                        title="Habilitar como productor"
+                        tone="primary"
+                        onClick={() => habilitarProductor(u)}
+                      />
+                    )}
                     <IconBtn name="edit" title={dim ? "Reactiva al usuario para editarlo" : "Editar"} tone="primary" disabled={dim} onClick={() => setEditing(u)} />
                     <Toggle on={u.is_active} title={u.is_active ? "Dar de baja" : "Reactivar"} onClick={() => toggleActivo(u)} />
                     <IconBtn name="trash" title="Eliminar" tone="danger" onClick={() => eliminar(u)} />
