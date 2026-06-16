@@ -16,6 +16,8 @@ from app.routers import (
     alertas,
     auth,
     biohuertos,
+    campanias,
+    catalogos,
     cosechas,
     cuidados,
     cultivos,
@@ -63,6 +65,8 @@ app.include_router(rag.router)
 app.include_router(recomendaciones.router)
 app.include_router(cosechas.router)
 app.include_router(dashboard.router)
+app.include_router(campanias.router)
+app.include_router(catalogos.router)
 
 
 @app.on_event("startup")
@@ -100,14 +104,16 @@ async def public_harvest_catalog(
             c.id::text,
             c.nombre_producto,
             c.cantidad,
-            c.unidad,
+            un.codigo as unidad,
             c.precio_referencial,
             c.fecha_cosecha,
-            cu.especie as cultivo,
+            e.nombre as cultivo,
             b.nombre as biohuerto,
             b.area_m2
         from cosechas c
+        left join unidades un on un.id = c.unidad_id
         left join cultivos cu on cu.id = c.cultivo_id
+        left join especies e on e.id = cu.especie_id
         left join biohuertos b on b.id = cu.biohuerto_id
         where c.estado in ('disponible', 'publicado')
           and c.deleted_at is null

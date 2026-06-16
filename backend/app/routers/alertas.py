@@ -17,14 +17,15 @@ _PRIORIDAD_TO_INT = {"baja": 1, "media": 2, "alta": 3}
 
 _ALERTA_SELECT = """
     select a.id, t.nombre as tipo, a.titulo, a.descripcion,
-           a.cultivo_id, c.especie as cultivo,
-           a.biohuerto_id, b.nombre as biohuerto,
+           a.cultivo_id::text as cultivo_id, e.nombre as cultivo,
+           a.biohuerto_id::text as biohuerto_id, b.nombre as biohuerto,
            case a.prioridad when 1 then 'baja' when 3 then 'alta' else 'media' end as prioridad,
            a.estado, a.fecha_programada, a.es_automatica, a.vista,
            a.created_at, a.updated_at
     from alertas a
     join tipos_alerta t on t.id = a.tipo_id
     left join cultivos c on c.id = a.cultivo_id
+    left join especies e on e.id = c.especie_id
     left join biohuertos b on b.id = a.biohuerto_id
 """
 
@@ -48,13 +49,14 @@ async def _generate_cuidado_alerts(session: AsyncSession, current_user: CurrentU
               prioridad, estado, fecha_programada, es_automatica, cuidado_id, vista
             )
             select cu.id, cu.usuario_id, c.tipo_id,
-                   t.nombre || ': ' || cu.especie,
+                   t.nombre || ': ' || e.nombre,
                    coalesce(c.descripcion, t.nombre || ' programado cada ' || c.frecuencia_dias || ' dias'),
                    2, 'pendiente',
                    coalesce(c.ultima_realizada, c.created_at) + (c.frecuencia_dias || ' days')::interval,
                    true, c.id, false
             from cuidados c
             join cultivos cu on cu.id = c.cultivo_id
+            join especies e on e.id = cu.especie_id
             join tipos_alerta t on t.id = c.tipo_id
             where {" and ".join(filters)}
               and coalesce(c.ultima_realizada, c.created_at) + (c.frecuencia_dias || ' days')::interval <= now()
@@ -122,7 +124,7 @@ async def mark_seen(
 async def list_alertas(
     estado: str | None = None,
     cultivo_id: UUID | None = None,
-    biohuerto_id: int | None = None,
+    biohuerto_id: UUID | None = None,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[AlertaOut]:

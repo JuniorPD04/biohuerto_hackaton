@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 
 class DashboardOut(BaseModel):
-    biohuerto_id: int
+    biohuerto_id: str
     total_cultivos: int
     cultivos_por_etapa: list[dict]
     alertas_pendientes: int

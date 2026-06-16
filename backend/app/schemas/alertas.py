@@ -15,7 +15,7 @@ class AlertaCreate(BaseModel):
     titulo: str = Field(min_length=2, max_length=200)
     descripcion: str | None = Field(default=None, max_length=4000)
     cultivo_id: UUID | None = None
-    biohuerto_id: int | None = None
+    biohuerto_id: UUID | None = None
     prioridad: PrioridadAlerta = "media"
     fecha_programada: datetime
 
@@ -44,9 +44,9 @@ class AlertaOut(BaseModel):
     tipo: str
     titulo: str
     descripcion: str | None = None
-    cultivo_id: UUID | None = None
+    cultivo_id: str | None = None
     cultivo: str | None = None
-    biohuerto_id: int | None = None
+    biohuerto_id: str | None = None
     biohuerto: str | None = None
     prioridad: str
     estado: EstadoAlerta

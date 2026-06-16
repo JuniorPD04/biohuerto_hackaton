@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.dashboard import DashboardOut
 
 
-async def build_dashboard(session: AsyncSession, biohuerto_id: int) -> DashboardOut:
+async def build_dashboard(session: AsyncSession, biohuerto_id: str) -> DashboardOut:
     total_result = await session.execute(
         text(
             """

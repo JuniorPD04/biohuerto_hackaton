@@ -1,0 +1,54 @@
+-- ============================================================
+--  offline_support.sql — Soporte offline-first (NOTA DE APLICACIÓN)
+-- ============================================================
+--
+--  El soporte offline ya está INTEGRADO en init.sql. Este archivo
+--  solo documenta CÓMO aplicarlo a una base existente.
+--
+--  Cambios que introduce el soporte offline:
+--    A) Columnas de rastreo (last_synced_at, is_synced) en las
+--       tablas que el productor crea/edita en campo.
+--    B) Tabla sync_queue (cola de sincronización diferida).
+--    C) Cambio de TIPO de PK a UUID en tres tablas para que puedan
+--       crearse sin conexión:
+--         · biohuertos          (BIGSERIAL → UUID)  ← padre, lo apuntan cultivos/alertas/adjuntos
+--         · practicas_agricolas  (BIGSERIAL → UUID)
+--         · costos_produccion    (BIGSERIAL → UUID)
+--
+--  (A) y (B) son aditivos y se podrían migrar in-place. Pero (C)
+--  cambia el tipo del PK sobre datos existentes, lo que obliga a:
+--    - soltar y recrear las FKs que apuntan a biohuertos,
+--    - soltar el CHECK multicolumna de archivos_adjuntos,
+--    - recrear los índices afectados,
+--    - mapear cada id BIGINT viejo a su nuevo UUID.
+--  Es frágil. Como los datos actuales son de SEED (regenerables),
+--  la vía soportada es RECREAR el esquema desde init.sql.
+--
+-- ------------------------------------------------------------
+--  VÍA RECOMENDADA (dev / hackathon) — recrear esquema
+-- ------------------------------------------------------------
+--    psql "$DATABASE_URL" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+--    psql "$DATABASE_URL" -f backend/init.sql
+--    psql "$DATABASE_URL" -f backend/seed.sql     -- ⚠ ver nota de seeds
+--    psql "$DATABASE_URL" -f backend/seed2.sql    -- ⚠ ver nota de seeds
+--
+--  init.sql recrea las extensiones (uuid-ossp, pgcrypto, vector),
+--  los roles/grants y todo el esquema ya con soporte offline.
+--
+--  ⚠️  SEEDS DESACTUALIZADOS: seed.sql y seed2.sql son dumps del
+--      esquema ANTERIOR y NO cargan con el esquema nuevo:
+--        · biohuertos.id pasó de BIGINT a UUID (los seeds usan 1,10,21…)
+--        · biohuertos.responsable_id → responsable_biohuerto_id
+--        · cultivos.especie (texto) → cultivos.especie_id (FK a especies)
+--      Hay que regenerarlos antes de poder cargarlos.
+--
+--  ⚠️  DROP SCHEMA public CASCADE borra TODAS las tablas y datos
+--      del esquema public. Úsalo solo en entornos de desarrollo.
+--
+-- ------------------------------------------------------------
+--  ¿Necesitas PRESERVAR datos productivos?
+-- ------------------------------------------------------------
+--  No uses la recreación. Pídeme una migración con tabla de mapeo
+--  id->uuid (transaccional, con drop/recreate de FKs, CHECK e
+--  índices) y la escribo con cuidado para tu caso específico.
+-- ============================================================

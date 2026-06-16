@@ -13,10 +13,16 @@ from app.schemas.users import CurrentUser
 router = APIRouter(prefix="/api/incidencias", tags=["incidencias"])
 
 _INCIDENCIA_SELECT = """
-    select i.id, i.cultivo_id, ti.nombre as tipo, i.descripcion, i.severidad,
-           i.zona_afectada, i.estado, i.reportado_en
+    select i.id::text as id, i.cultivo_id::text as cultivo_id, ti.nombre as tipo,
+           i.descripcion, i.severidad, i.zona_id, z.nombre as zona_afectada,
+           i.estado, i.reportado_en,
+           e.nombre as cultivo, b.id::text as biohuerto_id, b.nombre as biohuerto
     from incidencias i
     join tipos_incidencia ti on ti.id = i.tipo_id
+    left join zonas_planta z on z.id = i.zona_id
+    left join cultivos cu on cu.id = i.cultivo_id
+    left join especies e on e.id = cu.especie_id
+    left join biohuertos b on b.id = cu.biohuerto_id
 """
 
 
@@ -67,11 +73,11 @@ async def create_incidencia(
             """
             insert into incidencias (
               cultivo_id, tipo_id, usuario_id, descripcion, severidad,
-              zona_afectada, estado, reportado_en
+              zona_id, estado, reportado_en
             )
             values (
               :cultivo_id, :tipo_id, :usuario_id, :descripcion, :severidad,
-              :zona_afectada, :estado, coalesce(:reportado_en, now())
+              :zona_id, :estado, coalesce(:reportado_en, now())
             )
             returning id
             """
@@ -82,7 +88,7 @@ async def create_incidencia(
             "usuario_id": current_user.id,
             "descripcion": payload.descripcion,
             "severidad": payload.severidad,
-            "zona_afectada": payload.zona_afectada,
+            "zona_id": payload.zona_id,
             "estado": payload.estado,
             "reportado_en": payload.reportado_en,
         },
@@ -98,22 +104,31 @@ async def create_incidencia(
 
 @router.get("", response_model=list[IncidenciaOut])
 async def list_incidencias(
-    cultivo_id: UUID = Query(...),
-    limit: int = Query(default=50, ge=1, le=100),
+    cultivo_id: UUID | None = Query(default=None),
+    biohuerto_id: str | None = Query(default=None),
+    estado: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[IncidenciaOut]:
-    await _ensure_cultivo_access(session, cultivo_id, current_user)
+    where = ["i.deleted_at is null"]
+    params: dict = {"limit": limit}
+    if cultivo_id is not None:
+        where.append("i.cultivo_id = :cultivo_id")
+        params["cultivo_id"] = cultivo_id
+    if biohuerto_id:
+        where.append("cu.biohuerto_id = :biohuerto_id")
+        params["biohuerto_id"] = biohuerto_id
+    if estado:
+        where.append("i.estado = :estado")
+        params["estado"] = estado
     result = await session.execute(
         text(
             _INCIDENCIA_SELECT
-            + """
-            where i.deleted_at is null and i.cultivo_id = :cultivo_id
-            order by i.reportado_en desc, i.created_at desc
-            limit :limit
-            """
+            + " where " + " and ".join(where)
+            + " order by i.reportado_en desc, i.created_at desc limit :limit"
         ),
-        {"cultivo_id": cultivo_id, "limit": limit},
+        params,
     )
     return [_to_incidencia_out(row) for row in result.mappings().all()]
 
@@ -132,7 +147,7 @@ async def update_incidencia(
 
     params: dict = {"id": incidencia_id}
     clauses: list[str] = []
-    simple_fields = {"descripcion", "severidad", "zona_afectada", "estado"}
+    simple_fields = {"descripcion", "severidad", "zona_id", "estado"}
     for field in simple_fields:
         if field in values:
             params[field] = values[field]

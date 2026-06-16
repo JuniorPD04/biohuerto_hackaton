@@ -31,8 +31,8 @@ class CuidadoUpdate(BaseModel):
 
 
 class CuidadoOut(BaseModel):
-    id: UUID
-    cultivo_id: UUID
+    id: str
+    cultivo_id: str
     tipo: str
     descripcion: str | None = None
     frecuencia_dias: int
@@ -40,5 +40,8 @@ class CuidadoOut(BaseModel):
     proxima_fecha: datetime | None = None
     vencido: bool = False
     activo: bool
+    cultivo: str | None = None
+    biohuerto: str | None = None
+    biohuerto_id: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

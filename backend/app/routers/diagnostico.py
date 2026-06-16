@@ -67,14 +67,14 @@ async def _to_diagnostico_out(session: AsyncSession, row) -> DiagnosticoOut:
 async def _validate_scope(
     session: AsyncSession,
     current_user: CurrentUser,
-    biohuerto_id: int | None,
+    biohuerto_id: str | None,
     cultivo_id: UUID | None,
 ) -> None:
     if biohuerto_id is not None:
         await _ensure_biohuerto_access(session, biohuerto_id, current_user)
     if cultivo_id is not None:
         cultivo = await _ensure_cultivo_access(session, cultivo_id, current_user)
-        if biohuerto_id is not None and cultivo["biohuerto_id"] != biohuerto_id:
+        if biohuerto_id is not None and str(cultivo["biohuerto_id"]) != str(biohuerto_id):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El cultivo no pertenece al biohuerto indicado",

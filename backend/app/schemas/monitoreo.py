@@ -22,8 +22,8 @@ class MonitoreoCreate(BaseModel):
 
 
 class MonitoreoOut(BaseModel):
-    id: UUID
-    cultivo_id: UUID
+    id: str
+    cultivo_id: str
     fuente: str
     sensor_codigo: str | None = None
     registrado_en: datetime
@@ -33,5 +33,8 @@ class MonitoreoOut(BaseModel):
     ph_suelo: Decimal | None = None
     observacion: str | None = None
     luminosidad_nivel: str | None = None
+    cultivo: str | None = None
+    biohuerto: str | None = None
+    biohuerto_id: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

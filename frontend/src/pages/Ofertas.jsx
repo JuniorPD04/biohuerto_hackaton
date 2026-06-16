@@ -19,9 +19,7 @@ import { tintFor, fmtFecha, fmtMoneda, ESTADO_COSECHA } from "../lib/theme.js";
 import { useToast } from "../components/ui/Toast.jsx";
 import { useConfirm, eliminarDialog, reactivarDialog } from "../components/ui/Confirm.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
-import { cosechasApi, cultivosApi, usuariosApi } from "../lib/resources.js";
-
-const UNIDADES = ["por kg", "por unidad", "por atado", "por docena"];
+import { cosechasApi, cultivosApi, usuariosApi, catalogosApi } from "../lib/resources.js";
 
 const COSECHA_COLS = "2fr 1.4fr 1fr .9fr 1fr auto";
 const COSECHA_HEAD = ["Producto", "Productor", "Cosecha", "Precio", "Estado", "Acciones"];
@@ -511,6 +509,10 @@ function CosechaModal({ open, onClose, onSaved, mode, cosecha, toast }) {
   const [form, setForm] = useState({});
   const [cultivos, setCultivos] = useState([]);
   const [productores, setProductores] = useState([]);
+  const [unidades, setUnidades] = useState([]);
+  const [nuevaUnidad, setNuevaUnidad] = useState(false);
+  const [nuevaUnidadNombre, setNuevaUnidadNombre] = useState("");
+  const [creandoUnidad, setCreandoUnidad] = useState(false);
   const [saving, setSaving] = useState(false);
   const isNew = mode === "new";
 
@@ -520,12 +522,29 @@ function CosechaModal({ open, onClose, onSaved, mode, cosecha, toast }) {
       cultivo_id: cosecha?.cultivo_id || "",
       usuario_id: cosecha?.usuario_id || "",
       cantidad: cosecha?.cantidad ?? "",
-      unidad: cosecha?.unidad || "por kg",
+      unidad_id: cosecha?.unidad_id ?? "",
       precio_referencial: cosecha?.precio_referencial ?? "",
       fecha_cosecha: (cosecha?.fecha_cosecha || "").split("T")[0] || "",
       estado: cosecha?.estado || "disponible",
     });
+    setNuevaUnidad(false);
+    setNuevaUnidadNombre("");
   }, [open, cosecha]);
+
+  // Catálogo de unidades de medida (selector + "agregar nueva").
+  useEffect(() => {
+    if (!open) return;
+    catalogosApi
+      .list("unidades")
+      .then((data) => setUnidades(Array.isArray(data) ? data : data?.items || []))
+      .catch(() => setUnidades([]));
+  }, [open]);
+
+  // Si no hay unidad seleccionada, preseleccionar la primera del catálogo.
+  useEffect(() => {
+    if (form.unidad_id || unidades.length === 0) return;
+    setForm((f) => ({ ...f, unidad_id: unidades[0].id }));
+  }, [unidades, form.unidad_id]);
 
   // Al registrar, lista los cultivos en etapa de cosecha (listos para publicar) en orden alfabético.
   useEffect(() => {
@@ -560,12 +579,32 @@ function CosechaModal({ open, onClose, onSaved, mode, cosecha, toast }) {
   if (!open) return null;
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  const crearUnidad = async () => {
+    const nombre = nuevaUnidadNombre.trim();
+    if (!nombre) return;
+    setCreandoUnidad(true);
+    try {
+      const creada = await catalogosApi.create("unidades", { nombre });
+      const data = await catalogosApi.list("unidades");
+      const items = Array.isArray(data) ? data : data?.items || [];
+      setUnidades(items);
+      const nuevoId = creada?.id ?? items.find((u) => u.nombre === nombre)?.id ?? "";
+      if (nuevoId) setForm((f) => ({ ...f, unidad_id: nuevoId }));
+      setNuevaUnidad(false);
+      setNuevaUnidadNombre("");
+    } catch {
+      toast("No se pudo crear la unidad", "danger");
+    } finally {
+      setCreandoUnidad(false);
+    }
+  };
+
   const save = async () => {
     setSaving(true);
     const body = {
       nombre_producto: form.nombre_producto || "Nuevo producto",
       cantidad: Number(form.cantidad) || 0,
-      unidad: form.unidad,
+      unidad_id: form.unidad_id === "" ? null : Number(form.unidad_id),
       precio_referencial: Number(form.precio_referencial) || 0,
       fecha_cosecha:
         form.fecha_cosecha || (isNew ? new Date().toISOString().split("T")[0] : null),
@@ -666,11 +705,55 @@ function CosechaModal({ open, onClose, onSaved, mode, cosecha, toast }) {
             />
           </Field>
           <Field label="Unidad">
-            <Select value={form.unidad} onChange={set("unidad")}>
-              {UNIDADES.map((u) => (
-                <option key={u}>{u}</option>
-              ))}
-            </Select>
+            {nuevaUnidad ? (
+              <div className="flex items-center gap-2">
+                <Input
+                  value={nuevaUnidadNombre}
+                  onChange={(e) => setNuevaUnidadNombre(e.target.value)}
+                  placeholder="Ej: por kg"
+                />
+                <Button
+                  variant="success"
+                  size="sm"
+                  icon="check"
+                  onClick={crearUnidad}
+                  disabled={creandoUnidad}
+                >
+                  {creandoUnidad ? "…" : "Crear"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setNuevaUnidad(false);
+                    setNuevaUnidadNombre("");
+                  }}
+                >
+                  Cancelar
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <Select value={form.unidad_id || ""} onChange={set("unidad_id")}>
+                    <option value="">Selecciona una unidad…</option>
+                    {unidades.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.nombre}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="plus"
+                  onClick={() => setNuevaUnidad(true)}
+                >
+                  Nueva
+                </Button>
+              </div>
+            )}
           </Field>
           <Field label="Precio referencial (S/)">
             <Input

@@ -12,7 +12,7 @@ PartePlanta = Literal["Hoja", "Fruto", "Tallo", "Raíz", "Planta completa"]
 
 
 class DiagnosticoGuiadoCreate(BaseModel):
-    biohuerto_id: int | None = None
+    biohuerto_id: str | None = None
     cultivo_id: UUID | None = None
     incidencia_id: UUID | None = None
     especie: str = Field(min_length=2, max_length=120)

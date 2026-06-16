@@ -37,11 +37,12 @@ async def panel_overview(
     cosechas = await session.execute(
         text(
             f"""
-            select c.id::text as cultivo_id, c.especie, b.nombre as biohuerto,
+            select c.id::text as cultivo_id, e.nombre as especie, b.nombre as biohuerto,
                    c.fecha_estimada_cosecha,
                    (c.fecha_estimada_cosecha - current_date) as dias
             from cultivos c
             join etapas_fenologicas ef on ef.id = c.etapa_id
+            join especies e on e.id = c.especie_id
             left join biohuertos b on b.id = c.biohuerto_id
             where c.deleted_at is null and c.is_active
               and ef.codigo <> 'finalizado'
@@ -161,7 +162,7 @@ async def panel_overview(
     sem_huella = await session.execute(
         text(
             f"""
-            select c.id::text as cultivo_id, c.especie, b.nombre as biohuerto,
+            select c.id::text as cultivo_id, e.nombre as especie, b.nombre as biohuerto,
                    coalesce(sum(h.compost_kg), 0) + coalesce(sum(h.abono_verde_kg), 0) as compost_kg,
                    coalesce(sum(h.agua_m3), 0) as agua_m3,
                    coalesce(sum(h.area_sin_agroquimicos_m2), 0) as area_m2,
@@ -169,11 +170,12 @@ async def panel_overview(
                    coalesce(sum(h.huella_neta_kg_co2), 0) as huella
             from cultivos c
             join huella_carbono h on h.cultivo_id = c.id
+            join especies e on e.id = c.especie_id
             left join biohuertos b on b.id = c.biohuerto_id
             where c.deleted_at is null
               {"and c.usuario_id = :uid" if mine else ""}
-            group by c.id, c.especie, b.nombre
-            order by c.especie
+            group by c.id, e.nombre, b.nombre
+            order by e.nombre
             """
         ),
         uid,
@@ -237,7 +239,7 @@ async def panel_overview(
 
 @router.get("/{biohuerto_id}", response_model=DashboardOut)
 async def get_dashboard(
-    biohuerto_id: int,
+    biohuerto_id: str,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> DashboardOut:
