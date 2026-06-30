@@ -1,26 +1,32 @@
 import { api } from "./api.js";
+import {
+  localFirstCreate,
+  localFirstDelete,
+  localFirstList,
+  localFirstUpdate,
+} from "../db/offlineResource.js";
 
 const unwrap = (p) => p.then((r) => r.data);
 // Acepta un cultivoId (string) o un objeto de params { cultivo_id, biohuerto_id, estado, ... }
 const asParams = (arg) => (typeof arg === "string" ? { cultivo_id: arg } : arg || {});
 
 export const biohuertosApi = {
-  list: () => unwrap(api.get("/api/biohuertos")),
+  list: () => localFirstList("biohuertos", () => unwrap(api.get("/api/biohuertos"))),
   get: (id) => unwrap(api.get(`/api/biohuertos/${id}`)),
   propietarios: (id) => unwrap(api.get(`/api/biohuertos/${id}/propietarios`)),
   assignPropietario: (id, body) => unwrap(api.post(`/api/biohuertos/${id}/propietarios`, body)),
   removePropietario: (id, propietarioId) => api.delete(`/api/biohuertos/${id}/propietarios/${propietarioId}`),
-  create: (body) => unwrap(api.post("/api/biohuertos", body)),
-  update: (id, body) => unwrap(api.patch(`/api/biohuertos/${id}`, body)),
-  remove: (id) => api.delete(`/api/biohuertos/${id}`),
+  create: (body) => localFirstCreate("biohuertos", body, () => unwrap(api.post("/api/biohuertos", body))),
+  update: (id, body) => localFirstUpdate("biohuertos", id, body, () => unwrap(api.patch(`/api/biohuertos/${id}`, body))),
+  remove: (id) => localFirstDelete("biohuertos", id, () => api.delete(`/api/biohuertos/${id}`)),
 };
 
 export const cultivosApi = {
-  list: (params) => unwrap(api.get("/api/cultivos", { params })),
+  list: (params) => localFirstList("cultivos", () => unwrap(api.get("/api/cultivos", { params })), params),
   get: (id) => unwrap(api.get(`/api/cultivos/${id}`)),
-  create: (body) => unwrap(api.post("/api/cultivos", body)),
-  update: (id, body) => unwrap(api.patch(`/api/cultivos/${id}`, body)),
-  remove: (id) => api.delete(`/api/cultivos/${id}`),
+  create: (body) => localFirstCreate("cultivos", body, () => unwrap(api.post("/api/cultivos", body))),
+  update: (id, body) => localFirstUpdate("cultivos", id, body, () => unwrap(api.patch(`/api/cultivos/${id}`, body))),
+  remove: (id) => localFirstDelete("cultivos", id, () => api.delete(`/api/cultivos/${id}`)),
   historial: (id) => unwrap(api.get(`/api/cultivos/${id}/historial`)),
 };
 
@@ -34,12 +40,12 @@ export const alertasApi = {
 };
 
 export const cosechasApi = {
-  list: (params) => unwrap(api.get("/api/cosechas", { params })),
-  public: () => unwrap(api.get("/api/cosechas/public")),
+  list: (params) => localFirstList("cosechas", () => unwrap(api.get("/api/cosechas", { params })), params),
+  public: () => localFirstList("mercado", () => unwrap(api.get("/api/cosechas/public"))),
   get: (id) => unwrap(api.get(`/api/cosechas/${id}`)),
-  create: (body) => unwrap(api.post("/api/cosechas", body)),
-  update: (id, body) => unwrap(api.patch(`/api/cosechas/${id}`, body)),
-  remove: (id) => api.delete(`/api/cosechas/${id}`),
+  create: (body) => localFirstCreate("cosechas", body, () => unwrap(api.post("/api/cosechas", body))),
+  update: (id, body) => localFirstUpdate("cosechas", id, body, () => unwrap(api.patch(`/api/cosechas/${id}`, body))),
+  remove: (id) => localFirstDelete("cosechas", id, () => api.delete(`/api/cosechas/${id}`)),
 };
 
 export const usuariosApi = {
@@ -52,29 +58,35 @@ export const usuariosApi = {
   remove: (id) => api.delete(`/api/users/${id}`),
 };
 
+export const notificacionesAdminApi = {
+  recipients: (params) => unwrap(api.get("/api/notifications/admin/recipients", { params })),
+  campaigns: (limit = 30) => unwrap(api.get("/api/notifications/admin/campaigns", { params: { limit } })),
+  send: (body) => unwrap(api.post("/api/notifications/admin/campaigns", body)),
+};
+
 export const dashboardApi = {
   get: (biohuertoId) => unwrap(api.get(`/api/dashboard/${biohuertoId}`)),
   overview: (dias = 30) => unwrap(api.get("/api/dashboard/overview", { params: { dias } })),
 };
 
 export const monitoreoApi = {
-  list: (arg) => unwrap(api.get("/api/monitoreo", { params: asParams(arg) })),
-  create: (body) => unwrap(api.post("/api/monitoreo", body)),
+  list: (arg) => localFirstList("monitoreo_registros", () => unwrap(api.get("/api/monitoreo", { params: asParams(arg) })), asParams(arg)),
+  create: (body) => localFirstCreate("monitoreo_registros", body, () => unwrap(api.post("/api/monitoreo", body))),
 };
 
 export const incidenciasApi = {
-  list: (arg) => unwrap(api.get("/api/incidencias", { params: asParams(arg) })),
-  create: (body) => unwrap(api.post("/api/incidencias", body)),
-  update: (id, body) => unwrap(api.patch(`/api/incidencias/${id}`, body)),
-  remove: (id) => api.delete(`/api/incidencias/${id}`),
+  list: (arg) => localFirstList("incidencias", () => unwrap(api.get("/api/incidencias", { params: asParams(arg) })), asParams(arg)),
+  create: (body) => localFirstCreate("incidencias", body, () => unwrap(api.post("/api/incidencias", body))),
+  update: (id, body) => localFirstUpdate("incidencias", id, body, () => unwrap(api.patch(`/api/incidencias/${id}`, body))),
+  remove: (id) => localFirstDelete("incidencias", id, () => api.delete(`/api/incidencias/${id}`)),
 };
 
 export const cuidadosApi = {
-  list: (arg) => unwrap(api.get("/api/cuidados", { params: asParams(arg) })),
-  create: (body) => unwrap(api.post("/api/cuidados", body)),
-  update: (id, body) => unwrap(api.patch(`/api/cuidados/${id}`, body)),
-  remove: (id) => api.delete(`/api/cuidados/${id}`),
-  marcarRealizado: (id) => unwrap(api.post(`/api/cuidados/${id}/realizado`)),
+  list: (arg) => localFirstList("cuidados", () => unwrap(api.get("/api/cuidados", { params: asParams(arg) })), asParams(arg)),
+  create: (body) => localFirstCreate("cuidados", body, () => unwrap(api.post("/api/cuidados", body))),
+  update: (id, body) => localFirstUpdate("cuidados", id, body, () => unwrap(api.patch(`/api/cuidados/${id}`, body))),
+  remove: (id) => localFirstDelete("cuidados", id, () => api.delete(`/api/cuidados/${id}`)),
+  marcarRealizado: (id) => localFirstUpdate("cuidados", id, { ultima_realizada: new Date().toISOString() }, () => unwrap(api.post(`/api/cuidados/${id}/realizado`))),
 };
 
 export const diagnosticoApi = {
@@ -110,10 +122,10 @@ export const ragApi = {
 };
 
 export const trazabilidadApi = {
-  practicas: (arg) => unwrap(api.get("/api/trazabilidad/practicas", { params: asParams(arg) })),
-  crearPractica: (body) => unwrap(api.post("/api/trazabilidad/practicas", body)),
-  costos: (arg) => unwrap(api.get("/api/trazabilidad/costos", { params: asParams(arg) })),
-  crearCosto: (body) => unwrap(api.post("/api/trazabilidad/costos", body)),
+  practicas: (arg) => localFirstList("practicas_agricolas", () => unwrap(api.get("/api/trazabilidad/practicas", { params: asParams(arg) })), asParams(arg)),
+  crearPractica: (body) => localFirstCreate("practicas_agricolas", body, () => unwrap(api.post("/api/trazabilidad/practicas", body))),
+  costos: (arg) => localFirstList("costos_produccion", () => unwrap(api.get("/api/trazabilidad/costos", { params: asParams(arg) })), asParams(arg)),
+  crearCosto: (body) => localFirstCreate("costos_produccion", body, () => unwrap(api.post("/api/trazabilidad/costos", body))),
   resumen: (biohuertoId) => unwrap(api.get(`/api/trazabilidad/biohuertos/${biohuertoId}/resumen`)),
 };
 

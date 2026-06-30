@@ -2,7 +2,7 @@
 
 Scripts SQL para **actualizar una base de datos ya existente** sin resetearla.
 
-`init.sql` y `seed.sql` solo se ejecutan cuando la BD se crea **desde cero**
+Los archivos de `backend/db/bootstrap` solo se ejecutan cuando la BD se crea **desde cero**
 (volumen vacío). Si ya tienes datos y haces un cambio de esquema, ese cambio
 **no** llega a las BD existentes (la tuya, la de tus compañeros, la del demo).
 Para eso están las migraciones: cada cambio de esquema se deja aquí como un
@@ -10,9 +10,9 @@ Para eso están las migraciones: cada cambio de esquema se deja aquí como un
 
 ## Regla de oro
 
-> **Si cambias el esquema (init.sql), crea aquí la migración equivalente.**
+> **Si cambias el esquema base, crea aquí la migración equivalente.**
 
-1. Aplica el cambio en `backend/init.sql` (fuente de verdad para BD nuevas).
+1. Aplica el cambio en `backend/db/bootstrap/01_init.sql` (fuente de verdad para BD nuevas).
 2. Crea aquí `NNN_descripcion.sql` con el cambio incremental para BD existentes.
 
 ## Convención
@@ -58,8 +58,15 @@ psql "postgres://migration_user:PASS@localhost:5432/biohuerto" \
 > Las DDL deben correr como **`migration_user`** (dueño del esquema) o el
 > superusuario de Postgres.
 
+Al iniciar localmente con `python run.py`, las migraciones se aplican de forma
+automatica usando `MIGRATION_DB_PASSWORD`. Puede desactivarse con
+`AUTO_MIGRATE=false` solo para tareas que no inicien la aplicacion.
+
 ## Migraciones
 
 | #   | Archivo                       | Cambio                                            |
 | --- | ----------------------------- | ------------------------------------------------- |
 | 001 | `001_usuarios_lat_lng.sql`    | `usuarios`: agrega `latitud` y `longitud` (mapa). |
+| 002 | `002_local_first_sync_notifications.sql` | Sincronizacion y Web Push. |
+| 003 | `003_admin_notification_campaigns.sql` | Campañas manuales del superadministrador. |
+| 004 | `004_repair_notification_deliveries.sql` | Repara una migracion 002 incompleta. |

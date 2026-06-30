@@ -2,6 +2,7 @@ import { Eye, EyeOff, LockKeyhole, Mail, Sprout } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import logo from "../assets/logo_biohuerto.jpeg";
 
 export default function Login() {
   const { login, register } = useAuth();
@@ -143,8 +144,9 @@ export default function Login() {
       </section>
 
       {/* Imagen */}
-      <section className="hidden min-h-screen bg-[url('https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&w=1400&q=80')] bg-cover bg-center lg:block">
-        <div className="flex h-full items-end bg-gradient-to-t from-slate-950/70 via-slate-950/20 to-transparent p-10">
+      <section className="relative hidden min-h-[100dvh] overflow-hidden bg-[#0e3a23] lg:block">
+        <img src={logo} alt="Tecnologia para biohuertos" className="absolute inset-0 h-full w-full object-cover opacity-75 mix-blend-screen" />
+        <div className="relative flex h-full items-end bg-gradient-to-t from-[#082719] via-[#0e3a23]/55 to-transparent p-10">
           <div className="max-w-xl text-white">
             <p className="text-sm font-semibold uppercase tracking-wide text-[#dcfce7]">Biohuertos urbanos</p>
             <p className="mt-2 text-4xl font-bold">

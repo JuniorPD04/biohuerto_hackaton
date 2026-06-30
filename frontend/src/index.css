@@ -48,6 +48,7 @@ body,
   margin: 0;
   padding: 0;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 body {
@@ -56,6 +57,25 @@ body {
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 767px) {
+  body { overflow-x: hidden; }
+  input,
+  select,
+  textarea { font-size: 16px; }
+}
+
+@media (max-width: 639px) {
+  .grid-cols-2 { grid-template-columns: minmax(0, 1fr) !important; }
 }
 
 ::selection {

@@ -13,6 +13,7 @@ import {
 import { cosechasApi } from "../lib/resources.js";
 import { fmtMoneda, tintFor } from "../lib/theme.js";
 import { useToast } from "../components/ui/Toast.jsx";
+import { useOffline } from "../context/OfflineContext.jsx";
 
 const waUrl = (telefono) => {
   const digits = (telefono || "").replace(/\D/g, "");
@@ -21,6 +22,7 @@ const waUrl = (telefono) => {
 
 export default function Mercado() {
   const toast = useToast();
+  const { online } = useOffline();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -60,6 +62,12 @@ export default function Mercado() {
         title="Mercado de productos"
         subtitle="Productos publicados por productores locales para compra directa."
       />
+
+      {!online && (
+        <div className="mb-5 flex items-center gap-3 rounded-xl bg-[#fff7e8] px-4 py-3 text-sm font-semibold text-[#80501e]">
+          <Icon name="wifi" size={18} /> Mostrando el ultimo mercado guardado. Contactar requiere conexion.
+        </div>
+      )}
 
       <Card pad="p-5" className="mb-[26px] !border !border-line" style={{ background: "var(--chip-2)" }}>
         <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-[1fr_260px]">
@@ -127,9 +135,10 @@ export default function Mercado() {
                     icon="chat"
                     full
                     className="mt-4"
-                    disabled={!url}
+                    disabled={!url || !online}
                     onClick={() => {
-                      if (url) window.open(url, "_blank", "noopener,noreferrer");
+                      if (!online) toast("Necesitas conexion para abrir WhatsApp", "danger");
+                      else if (url) window.open(url, "_blank", "noopener,noreferrer");
                       else toast("Este productor no tiene telefono registrado", "danger");
                     }}
                   >

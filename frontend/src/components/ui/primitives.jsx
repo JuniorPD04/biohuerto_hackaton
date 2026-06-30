@@ -206,11 +206,30 @@ export function ImageUpload({
     setUrl(v);
     onChange && onChange(v);
   };
-  const read = (file) => {
+  const read = async (file) => {
     if (!file || !file.type.startsWith("image/")) return;
-    const r = new FileReader();
-    r.onload = () => apply(r.result);
-    r.readAsDataURL(file);
+    const original = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    try {
+      const image = await new Promise((resolve, reject) => {
+        const value = new Image();
+        value.onload = () => resolve(value);
+        value.onerror = reject;
+        value.src = original;
+      });
+      const scale = Math.min(1, 1600 / Math.max(image.width, image.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+      apply(canvas.toDataURL("image/webp", 0.82));
+    } catch {
+      apply(original);
+    }
   };
   const chip =
     "rounded-[9px] border-none bg-white/90 px-[13px] py-[7px] text-[13px] font-bold text-text shadow-[0_2px_8px_rgba(20,40,30,.18)] cursor-pointer";
@@ -290,11 +309,11 @@ export function Modal({ open, onClose, title, subtitle, children, footer, width 
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-[80] grid place-items-center bg-[rgba(18,30,22,.46)] p-6 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[80] flex items-end bg-[rgba(18,30,22,.46)] p-0 backdrop-blur-[2px] md:grid md:place-items-center md:p-6"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[90vh] w-[94vw] flex-col overflow-hidden rounded-[20px] bg-bg shadow-modal animate-popIn"
+        className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[20px] bg-bg shadow-modal animate-popIn md:max-h-[90vh] md:w-[94vw] md:rounded-[20px]"
         style={{ width: `min(${width}px, 94vw)` }}
       >
         <div className="flex flex-shrink-0 items-start justify-between gap-4 border-b border-line bg-white px-[26px] py-[22px]">
@@ -304,9 +323,9 @@ export function Modal({ open, onClose, title, subtitle, children, footer, width 
           </div>
           <IconBtn name="x" title="Cerrar" onClick={onClose} />
         </div>
-        <div className="flex-1 overflow-y-auto p-[26px]">{children}</div>
+        <div className="flex-1 overflow-y-auto p-4 md:p-[26px]">{children}</div>
         {footer && (
-          <div className="flex flex-shrink-0 justify-end gap-3 border-t border-line bg-white px-[26px] py-[18px]">
+          <div className="flex flex-shrink-0 justify-end gap-3 border-t border-line bg-white px-4 pb-[calc(16px+env(safe-area-inset-bottom))] pt-4 md:px-[26px] md:py-[18px]">
             {footer}
           </div>
         )}
@@ -378,12 +397,12 @@ export function EmptyState({ icon = "leaf", title, desc, action }) {
 /* ---------------- Page header ---------------- */
 export function PageHeader({ title, subtitle, action }) {
   return (
-    <div className="mb-[26px] flex flex-wrap items-start justify-between gap-5">
+    <div className="mb-5 flex flex-col items-start justify-between gap-4 sm:mb-[26px] sm:flex-row sm:gap-5">
       <div>
-        <h1 className="m-0 text-[34px] font-extrabold tracking-[-.02em] text-primary">{title}</h1>
+        <h1 className="m-0 text-[28px] font-extrabold tracking-[-.02em] text-primary sm:text-[34px]">{title}</h1>
         {subtitle && <p className="mt-2 text-base text-muted-2">{subtitle}</p>}
       </div>
-      {action}
+      {action && <div className="w-full sm:w-auto [&>button]:w-full sm:[&>button]:w-auto">{action}</div>}
     </div>
   );
 }

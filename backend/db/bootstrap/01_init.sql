@@ -1,5 +1,5 @@
 -- ============================================================
---  init.sql — Esquema BIOHUERTO (normalizado, Junio 2026)
+--  01_init.sql — Esquema BIOHUERTO (normalizado, Junio 2026)
 --  Generado a partir de hackaton_2026/bd/biohuerto_bd.sql
 --  Envuelto en el modelo de roles: migration_user (dueño) /
 --  app_bio_user (privilegios de la app).

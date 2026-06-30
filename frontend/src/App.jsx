@@ -1,24 +1,27 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import AppShell from "./components/layout/AppShell.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
-import Login from "./pages/Login.jsx";
-import Panel from "./pages/Panel.jsx";
-import Usuarios from "./pages/Usuarios.jsx";
-import Biohuertos from "./pages/Biohuertos.jsx";
-import Cultivos from "./pages/Cultivos.jsx";
-import CultivoWorkspace from "./pages/CultivoWorkspace.jsx";
-import Fitosanitario from "./pages/Fitosanitario.jsx";
-import Alertas from "./pages/Alertas.jsx";
-import Ofertas from "./pages/Ofertas.jsx";
-import Rag from "./pages/Rag.jsx";
-import Campanias from "./pages/Campanias.jsx";
-import Incidencias from "./pages/Incidencias.jsx";
-import Monitoreo from "./pages/Monitoreo.jsx";
-import Cuidados from "./pages/Cuidados.jsx";
-import Trazabilidad from "./pages/Trazabilidad.jsx";
-import RolesAccesos from "./pages/RolesAccesos.jsx";
-import Entidades from "./pages/Entidades.jsx";
-import Mercado from "./pages/Mercado.jsx";
+
+const Login = lazy(() => import("./pages/Login.jsx"));
+const Panel = lazy(() => import("./pages/Panel.jsx"));
+const Usuarios = lazy(() => import("./pages/Usuarios.jsx"));
+const Biohuertos = lazy(() => import("./pages/Biohuertos.jsx"));
+const Cultivos = lazy(() => import("./pages/Cultivos.jsx"));
+const CultivoWorkspace = lazy(() => import("./pages/CultivoWorkspace.jsx"));
+const Fitosanitario = lazy(() => import("./pages/Fitosanitario.jsx"));
+const Alertas = lazy(() => import("./pages/Alertas.jsx"));
+const Ofertas = lazy(() => import("./pages/Ofertas.jsx"));
+const Rag = lazy(() => import("./pages/Rag.jsx"));
+const Campanias = lazy(() => import("./pages/Campanias.jsx"));
+const Incidencias = lazy(() => import("./pages/Incidencias.jsx"));
+const Monitoreo = lazy(() => import("./pages/Monitoreo.jsx"));
+const Cuidados = lazy(() => import("./pages/Cuidados.jsx"));
+const Trazabilidad = lazy(() => import("./pages/Trazabilidad.jsx"));
+const RolesAccesos = lazy(() => import("./pages/RolesAccesos.jsx"));
+const Entidades = lazy(() => import("./pages/Entidades.jsx"));
+const Mercado = lazy(() => import("./pages/Mercado.jsx"));
+const NotificacionesAdmin = lazy(() => import("./pages/NotificacionesAdmin.jsx"));
 
 function BootScreen() {
   return (
@@ -43,13 +46,18 @@ function GuestOnly({ children }) {
   return isAuthenticated ? <Navigate to={defaultPath(user)} replace /> : children;
 }
 
+function AdminOnly({ children }) {
+  const { user } = useAuth();
+  return user?.rol === "admin" ? children : <Navigate to={defaultPath(user)} replace />;
+}
+
 function defaultPath(user) {
   return user?.rol === "consumidor" ? "/mercado" : "/panel";
 }
 
 export default function App() {
   return (
-    <Routes>
+    <Suspense fallback={<BootScreen />}><Routes>
       <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
       <Route
         path="/"
@@ -79,9 +87,10 @@ export default function App() {
         <Route path="ofertas/:tab" element={<Ofertas />} />
         <Route path="roles" element={<RolesAccesos />} />
         <Route path="entidades" element={<Entidades />} />
+        <Route path="notificaciones" element={<AdminOnly><NotificacionesAdmin /></AdminOnly>} />
       </Route>
       <Route path="*" element={<FallbackHome />} />
-    </Routes>
+    </Routes></Suspense>
   );
 }
 

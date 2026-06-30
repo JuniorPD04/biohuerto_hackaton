@@ -62,6 +62,9 @@ class FakeResult:
     def first(self):
         return self.rows[0] if self.rows else None
 
+    def all(self):
+        return self.rows
+
 
 class FakeSession:
     def __init__(self, results):
@@ -77,6 +80,16 @@ class FakeSession:
 
     async def commit(self):
         self.committed = True
+
+    def begin_nested(self):
+        class Nested:
+            async def __aenter__(inner_self):
+                return self
+
+            async def __aexit__(inner_self, exc_type, exc, tb):
+                return False
+
+        return Nested()
 
 
 def user_row(**overrides):

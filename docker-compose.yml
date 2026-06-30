@@ -14,8 +14,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/db/00_roles.sh:/docker-entrypoint-initdb.d/00_roles.sh:ro
-      - ./backend/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
-      - ./backend/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      - ./backend/db/bootstrap/01_init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ./backend/db/bootstrap/02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB}"]
       interval: 5s
@@ -38,20 +38,54 @@ services:
     volumes:
       - ./backend/app:/app/app
     depends_on:
+      db_migrate:
+        condition: service_completed_successfully
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - biohuertos_network
+
+  db_migrate:
+    image: postgres:16-alpine
+    restart: "no"
+    env_file:
+      - .env
+    volumes:
+      - ./backend/db/migrations:/migrations:ro
+      - ./backend/db/migrate-container.sh:/migrate-container.sh:ro
+    depends_on:
       db:
         condition: service_healthy
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: ["sh", "/migrate-container.sh"]
+    networks:
+      - biohuertos_network
+
+  notification_worker:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://app_bio_user:${APP_DB_PASSWORD}@db:5432/${POSTGRES_DB}
+    volumes:
+      - ./backend/app:/app/app
+    depends_on:
+      db_migrate:
+        condition: service_completed_successfully
+    command: python -m app.notification_worker
     networks:
       - biohuertos_network
 
   frontend:
     build:
       context: ./frontend
+      target: dev
     container_name: biohuerto_frontend
     restart: unless-stopped
     environment:
       VITE_API_URL: http://localhost:8000
       VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
+      VITE_VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
     ports:
       - "5173:5173"
     volumes:

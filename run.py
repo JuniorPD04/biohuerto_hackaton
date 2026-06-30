@@ -51,6 +51,13 @@ def main() -> int:
     os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://app_bio_user:change-me-app-password@127.0.0.1:5432/biohuerto")
     os.environ.setdefault("SECRET_KEY", "dev-only-change-this-secret-key-32-chars")
 
+    if os.environ.get("AUTO_MIGRATE", "true").lower() in {"1", "true", "yes", "on"}:
+        migration_script = BACKEND_DIR / "db" / "apply_migrations.py"
+        result = subprocess.call([sys.executable, str(migration_script)], cwd=ROOT_DIR)
+        if result != 0:
+            print("No se pudo actualizar PostgreSQL. El backend no se iniciara con un esquema incompleto.")
+            return result
+
     host = os.environ.get("BACKEND_HOST", "127.0.0.1")
     port = os.environ.get("BACKEND_PORT", "8000")
     reload_flag = os.environ.get("BACKEND_RELOAD", "true").lower() in {"1", "true", "yes", "on"}

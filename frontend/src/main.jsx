@@ -5,6 +5,9 @@ import App from "./App.jsx";
 import { AuthProvider } from "./context/AuthContext.jsx";
 import { ToastProvider } from "./components/ui/Toast.jsx";
 import { ConfirmProvider } from "./components/ui/Confirm.jsx";
+import { OfflineProvider } from "./context/OfflineContext.jsx";
+import PwaManager from "./components/pwa/PwaManager.jsx";
+import LocalSecurityGate from "./components/pwa/LocalSecurityGate.jsx";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
@@ -12,9 +15,12 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-          <ConfirmProvider>
-            <App />
-          </ConfirmProvider>
+          <OfflineProvider>
+            <ConfirmProvider>
+              <LocalSecurityGate><App /></LocalSecurityGate>
+              <PwaManager />
+            </ConfirmProvider>
+          </OfflineProvider>
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>

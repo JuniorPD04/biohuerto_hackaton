@@ -12,3 +12,4 @@ cryptography>=43.0,<46.0
 slowapi>=0.1.9,<1.0
 reportlab>=4.2,<5.0
 markitdown[pdf]>=0.1,<1.0
+pywebpush>=2.0,<3.0

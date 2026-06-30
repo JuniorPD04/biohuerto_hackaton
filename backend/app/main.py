@@ -27,9 +27,11 @@ from app.routers import (
     diagnostico,
     incidencias,
     monitoreo,
+    notifications,
     rag,
     recomendaciones,
     trazabilidad,
+    sync,
     users,
 )
 from app.services.rag import ensure_ingested
@@ -71,6 +73,8 @@ app.include_router(campanias.router)
 app.include_router(catalogos.router)
 app.include_router(acceso.router)
 app.include_router(entidades.router)
+app.include_router(sync.router)
+app.include_router(notifications.router)
 
 
 @app.on_event("startup")

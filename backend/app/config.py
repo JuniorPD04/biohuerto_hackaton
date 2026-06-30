@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     cookie_secure: bool = Field(default=True, alias="COOKIE_SECURE")
     cors_origins_raw: str = Field(default="", alias="CORS_ORIGINS")
     # OpenAI: solo embeddings para el RAG (text-embedding-3-small = 1536 dim,
-    # debe coincidir con VECTOR(1536) de rag_chunks en backend/init.sql).
+    # debe coincidir con VECTOR(1536) del bootstrap PostgreSQL).
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_embed_model: str = Field(default="text-embedding-3-small", alias="OPENAI_EMBED_MODEL")
     # OpenRouter: vision (reconocimiento/diagnostico de plantas) y texto (recomendaciones).
@@ -26,8 +26,12 @@ class Settings(BaseSettings):
     fernet_key: str | None = Field(default=None, alias="FERNET_KEY")
     # Clave simetrica de pgcrypto para cifrar/descifrar campos sensibles
     # (telefono/direccion) en SQL con pgp_sym_encrypt/pgp_sym_decrypt.
-    # Debe coincidir con la usada en el seed (backend/seed.sql).
+    # Debe coincidir con la usada en backend/db/bootstrap/02_seed.sql.
     pgcrypto_key: str = Field(default="bkey", alias="PGCRYPTO_KEY")
+    vapid_public_key: str | None = Field(default=None, alias="VAPID_PUBLIC_KEY")
+    vapid_private_key: str | None = Field(default=None, alias="VAPID_PRIVATE_KEY")
+    vapid_subject: str = Field(default="mailto:admin@biohuerto.pe", alias="VAPID_SUBJECT")
+    notification_worker_interval_seconds: int = Field(default=30, ge=5, le=3600, alias="NOTIFICATION_WORKER_INTERVAL_SECONDS")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

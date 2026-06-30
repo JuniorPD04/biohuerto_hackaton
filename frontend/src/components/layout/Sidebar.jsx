@@ -38,6 +38,7 @@ export const MODULES = [
   },
   { id: "roles", label: "Roles y accesos", icon: "shield", path: "/roles", group: "admin", roles: ["admin"] },
   { id: "entidades", label: "Entidades", icon: "archive", path: "/entidades", group: "admin", roles: ["admin"] },
+  { id: "notificaciones", label: "Notificaciones", icon: "megaphone", path: "/notificaciones", group: "admin", roles: ["admin"] },
 ];
 
 const GROUP_LABELS = { tools: "HERRAMIENTAS", admin: "ADMINISTRACIÓN" };

@@ -4,27 +4,63 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-SyncTable = Literal["monitoreo_registros", "incidencias"]
+SyncEntity = Literal[
+    "biohuertos",
+    "cultivos",
+    "monitoreo_registros",
+    "incidencias",
+    "cuidados",
+    "practicas_agricolas",
+    "costos_produccion",
+    "cosechas",
+]
+SyncAction = Literal["create", "update", "delete"]
 
 
-class SyncRegistro(BaseModel):
-    tabla: SyncTable
-    uuid: UUID
+class SyncOperation(BaseModel):
+    operation_id: UUID
+    device_id: UUID
+    entity: SyncEntity
+    action: SyncAction
+    record_id: UUID
+    base_version: int | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
-    created_at_local: datetime
+    client_updated_at: datetime
 
 
 class SyncRequest(BaseModel):
-    registros: list[SyncRegistro] = Field(default_factory=list, max_length=100)
+    device_id: UUID
+    cursor: int = Field(default=0, ge=0)
+    operations: list[SyncOperation] = Field(default_factory=list, max_length=50)
 
 
-class SyncConflict(BaseModel):
-    tabla: SyncTable
-    uuid: UUID
-    reason: str
+class SyncResult(BaseModel):
+    operation_id: UUID
+    entity: SyncEntity
+    record_id: UUID
+    status: Literal["applied", "duplicate", "conflict", "rejected"]
+    server_version: int | None = None
+    record: dict[str, Any] | None = None
+    server_record: dict[str, Any] | None = None
+    error: str | None = None
+
+
+class SyncChange(BaseModel):
+    entity: SyncEntity
+    record_id: UUID
+    server_version: int
+    deleted: bool = False
+    record: dict[str, Any] | None = None
 
 
 class SyncResponse(BaseModel):
-    sincronizados: int
-    conflictos: list[SyncConflict]
+    results: list[SyncResult]
+    changes: list[SyncChange]
+    next_cursor: int
+    has_more: bool = False
 
+
+class SyncBootstrapResponse(BaseModel):
+    cursor: int
+    entities: dict[str, list[dict[str, Any]]]
+    catalogs: dict[str, list[dict[str, Any]]]
