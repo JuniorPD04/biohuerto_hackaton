@@ -33,6 +33,7 @@ from app.routers import (
     trazabilidad,
     sync,
     users,
+    ventas,
 )
 from app.services.rag import ensure_ingested
 
@@ -68,6 +69,7 @@ app.include_router(diagnostico.router)
 app.include_router(rag.router)
 app.include_router(recomendaciones.router)
 app.include_router(cosechas.router)
+app.include_router(ventas.router)
 app.include_router(dashboard.router)
 app.include_router(campanias.router)
 app.include_router(catalogos.router)

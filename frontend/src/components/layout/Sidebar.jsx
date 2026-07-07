@@ -36,6 +36,18 @@ export const MODULES = [
       { id: "publicaciones", label: "Publicaciones", path: "/ofertas/publicaciones" },
     ],
   },
+  {
+    id: "ventas",
+    label: "Ventas",
+    icon: "coins",
+    path: "/ventas",
+    group: "tools",
+    perm: "ventas.gestion",
+    subs: [
+      { id: "nueva", label: "Venta ahora", path: "/ventas/nueva" },
+      { id: "historial", label: "Historial de ventas", path: "/ventas/historial" },
+    ],
+  },
   { id: "roles", label: "Roles y accesos", icon: "shield", path: "/roles", group: "admin", roles: ["admin"] },
   { id: "entidades", label: "Entidades", icon: "archive", path: "/entidades", group: "admin", roles: ["admin"] },
   { id: "notificaciones", label: "Notificaciones", icon: "megaphone", path: "/notificaciones", group: "admin", roles: ["admin"] },

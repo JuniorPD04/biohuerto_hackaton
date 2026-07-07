@@ -762,6 +762,45 @@ CREATE TABLE cosechas_intereses (
 );
 
 -- ============================================================
+--  BLOQUE 11B · VENTA DIRECTA (PUNTO DE VENTA)
+--
+--  Un productor abre una "ronda de venta" (ej. una feria/minimarket) y
+--  registra ahi cada venta de sus cosechas disponibles. Cada venta
+--  descuenta `cosechas.cantidad` y guarda su propio snapshot de
+--  nombre/cultivo/precio (independiente de que la cosecha cambie despues).
+-- ============================================================
+CREATE TABLE venta_rondas (
+  id             UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
+  usuario_id     BIGINT        NOT NULL REFERENCES usuarios(id) ON DELETE RESTRICT,
+  nombre         VARCHAR(160)  NOT NULL,
+  fecha          DATE          NOT NULL DEFAULT CURRENT_DATE,
+  hora_inicio    TIME          NOT NULL DEFAULT LOCALTIME,
+  estado         VARCHAR(16)   NOT NULL DEFAULT 'abierta' CHECK (estado IN ('abierta','cerrada')),
+  created_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  updated_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  deleted_at     TIMESTAMPTZ   NULL
+);
+CREATE UNIQUE INDEX uq_venta_rondas_usuario_nombre
+  ON venta_rondas(usuario_id, nombre) WHERE deleted_at IS NULL;
+
+CREATE TABLE ventas (
+  id               UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
+  ronda_id         UUID          NOT NULL REFERENCES venta_rondas(id) ON DELETE CASCADE,
+  cosecha_id       UUID          NULL REFERENCES cosechas(id) ON DELETE SET NULL,
+  usuario_id       BIGINT        NOT NULL REFERENCES usuarios(id) ON DELETE RESTRICT,
+  nombre_producto  VARCHAR(140)  NOT NULL,
+  cultivo          VARCHAR(140)  NULL,
+  precio_unitario  NUMERIC(10,2) NOT NULL CHECK (precio_unitario >= 0),
+  cantidad         NUMERIC(10,2) NOT NULL CHECK (cantidad > 0),
+  unidad_id        SMALLINT      NULL REFERENCES unidades(id),
+  total            NUMERIC(12,2) GENERATED ALWAYS AS (round(cantidad * precio_unitario, 2)) STORED,
+  fecha            DATE          NOT NULL,
+  hora             TIME          NOT NULL,
+  created_at       TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  deleted_at       TIMESTAMPTZ   NULL
+);
+
+-- ============================================================
 --  BLOQUE 12 · HUELLA DE CARBONO
 -- ============================================================
 
@@ -982,6 +1021,12 @@ CREATE INDEX idx_cosechas_cultivo     ON cosechas(cultivo_id);
 CREATE INDEX idx_cosechas_estado      ON cosechas(estado);
 CREATE INDEX idx_intereses_cosecha    ON cosechas_intereses(cosecha_id);
 CREATE INDEX idx_intereses_consumidor ON cosechas_intereses(consumidor_id);
+CREATE INDEX idx_venta_rondas_usuario ON venta_rondas(usuario_id);
+CREATE INDEX idx_venta_rondas_fecha   ON venta_rondas(fecha);
+CREATE INDEX idx_ventas_ronda         ON ventas(ronda_id);
+CREATE INDEX idx_ventas_usuario       ON ventas(usuario_id);
+CREATE INDEX idx_ventas_cosecha       ON ventas(cosecha_id);
+CREATE INDEX idx_ventas_fecha         ON ventas(fecha);
 CREATE INDEX idx_huella_cultivo       ON huella_carbono(cultivo_id);
 CREATE INDEX idx_huella_periodo       ON huella_carbono(periodo_inicio, periodo_fin);
 CREATE INDEX idx_huella_comp_huella   ON huella_componentes(huella_id);
@@ -1031,6 +1076,7 @@ CREATE TRIGGER trg_practicas_upd      BEFORE UPDATE ON practicas_agricolas   FOR
 CREATE TRIGGER trg_costos_upd         BEFORE UPDATE ON costos_produccion     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_alertas_upd        BEFORE UPDATE ON alertas               FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_cosechas_upd       BEFORE UPDATE ON cosechas              FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER trg_venta_rondas_upd   BEFORE UPDATE ON venta_rondas          FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_huella_upd         BEFORE UPDATE ON huella_carbono        FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_sync_queue_upd     BEFORE UPDATE ON sync_queue            FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 

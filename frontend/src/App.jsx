@@ -21,6 +21,7 @@ const Trazabilidad = lazy(() => import("./pages/Trazabilidad.jsx"));
 const RolesAccesos = lazy(() => import("./pages/RolesAccesos.jsx"));
 const Entidades = lazy(() => import("./pages/Entidades.jsx"));
 const Mercado = lazy(() => import("./pages/Mercado.jsx"));
+const Ventas = lazy(() => import("./pages/Ventas.jsx"));
 const NotificacionesAdmin = lazy(() => import("./pages/NotificacionesAdmin.jsx"));
 
 function BootScreen() {
@@ -85,6 +86,8 @@ export default function App() {
         <Route path="alertas" element={<Alertas />} />
         <Route path="ofertas" element={<Navigate to="/ofertas/cosechas" replace />} />
         <Route path="ofertas/:tab" element={<Ofertas />} />
+        <Route path="ventas" element={<Navigate to="/ventas/nueva" replace />} />
+        <Route path="ventas/:tab" element={<Ventas />} />
         <Route path="roles" element={<RolesAccesos />} />
         <Route path="entidades" element={<Entidades />} />
         <Route path="notificaciones" element={<AdminOnly><NotificacionesAdmin /></AdminOnly>} />

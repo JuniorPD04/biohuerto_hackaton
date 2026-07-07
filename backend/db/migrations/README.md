@@ -70,3 +70,4 @@ automatica usando `MIGRATION_DB_PASSWORD`. Puede desactivarse con
 | 002 | `002_local_first_sync_notifications.sql` | Sincronizacion y Web Push. |
 | 003 | `003_admin_notification_campaigns.sql` | Campañas manuales del superadministrador. |
 | 004 | `004_repair_notification_deliveries.sql` | Repara una migracion 002 incompleta. |
+| 005 | `005_ventas.sql` | Punto de venta directo: rondas de venta, ventas y permiso `ventas.gestion`. |

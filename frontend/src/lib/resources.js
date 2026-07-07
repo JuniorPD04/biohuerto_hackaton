@@ -152,6 +152,15 @@ export const accesoApi = {
     unwrap(api.put(`/api/acceso/roles/${rolId}/permisos`, { permisos })),
 };
 
+export const ventasApi = {
+  crearRonda: (body) => unwrap(api.post("/api/ventas/rondas", body)),
+  listarRondas: (params) => unwrap(api.get("/api/ventas/rondas", { params })),
+  detalleRonda: (id) => unwrap(api.get(`/api/ventas/rondas/${id}`)),
+  cerrarRonda: (id) => unwrap(api.patch(`/api/ventas/rondas/${id}`, { estado: "cerrada" })),
+  confirmar: (rondaId, items) => unwrap(api.post(`/api/ventas/rondas/${rondaId}/ventas`, { items })),
+  listarVentas: (params) => unwrap(api.get("/api/ventas", { params })),
+};
+
 export const campaniasApi = {
   list: () => unwrap(api.get("/api/campanias")),
   create: (body) => unwrap(api.post("/api/campanias", body)),

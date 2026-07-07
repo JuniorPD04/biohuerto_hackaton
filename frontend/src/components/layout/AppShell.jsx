@@ -27,6 +27,7 @@ export default function AppShell() {
       { label: "Panel", path: "/panel", icon: "grid" },
       { label: "Huertos", path: "/biohuertos", icon: "sprout" },
       { label: "Cultivos", path: "/cultivos", icon: "leaf" },
+      { label: "Vender", path: "/ventas/nueva", icon: "coins" },
       { label: "Alertas", path: "/alertas", icon: "bell" },
     ];
   }, [user?.rol]);
