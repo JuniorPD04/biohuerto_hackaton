@@ -1,6 +1,6 @@
 import { Eye, EyeOff, LockKeyhole, Mail, Sprout } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import logo from "../assets/logo_biohuerto.jpeg";
 
@@ -140,6 +140,16 @@ export default function Login() {
               </button>
             </p>
           </form>
+
+          <p className="mt-6 text-center text-sm text-slate-500">
+            <Link to="/tienda" className="font-semibold text-[#166534] hover:text-[#14532d]">
+              Ver el Minimarket sin cuenta
+            </Link>
+            {" · "}
+            <Link to="/proyecto" className="font-semibold text-[#166534] hover:text-[#14532d]">
+              Conoce el proyecto
+            </Link>
+          </p>
         </div>
       </section>
 

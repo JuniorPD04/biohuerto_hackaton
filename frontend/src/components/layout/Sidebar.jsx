@@ -22,6 +22,7 @@ export const MODULES = [
   { id: "biohuertos", label: "Biohuertos", icon: "sprout", path: "/biohuertos", group: "main", perm: "biohuertos.gestion" },
   { id: "cultivos", label: "Cultivos", icon: "leaf", path: "/cultivos", group: "main", perm: "cultivos.gestion" },
   { id: "fitosanitario", label: "Fitosanitario", icon: "stethoscope", path: "/fitosanitario", group: "tools", perm: "diagnosticos.gestion" },
+  { id: "trazabilidad", label: "Registro de producción", icon: "recycle", path: "/trazabilidad", group: "tools", perm: "practicas.gestion" },
   { id: "rag", label: "RAG", icon: "database", path: "/rag", group: "tools", roles: ["admin"] },
   { id: "alertas", label: "Alertas", icon: "bell", path: "/alertas", group: "tools", perm: "alertas.gestion" },
   {

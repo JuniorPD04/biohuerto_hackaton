@@ -9,7 +9,15 @@ from app.database import get_session
 from app.dependencies import get_current_user, require_role
 from app.routers.biohuertos import _ensure_biohuerto_access
 from app.routers.cultivos import _ensure_cultivo_access
-from app.schemas.trazabilidad import CostoCreate, CostoOut, PracticaCreate, PracticaOut, TrazabilidadResumen
+from app.schemas.trazabilidad import (
+    CostoCreate,
+    CostoOut,
+    PracticaCreate,
+    PracticaOut,
+    ProduccionHortalizaOut,
+    ProduccionZonaOut,
+    TrazabilidadResumen,
+)
 from app.schemas.users import CurrentUser
 
 router = APIRouter(prefix="/api/trazabilidad", tags=["trazabilidad"])
@@ -267,3 +275,136 @@ async def get_resumen_trazabilidad(
         practicas_sostenibles=sostenibles,
         cultivos=cultivos_total,
     )
+
+
+@router.get("/produccion", response_model=list[ProduccionHortalizaOut])
+async def get_produccion_por_hortaliza(
+    usuario_id: int | None = Query(default=None),
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[ProduccionHortalizaOut]:
+    """Consolida, por hortaliza (especie), los datos del registro de
+    producción: área, fechas, insumos, producción, autoconsumo, venta e
+    inversión — una fila equivalente a la planilla de producción física."""
+    params: dict = {"usuario_id": None}
+    if current_user.rol != "admin":
+        params["usuario_id"] = current_user.id
+    elif usuario_id is not None:
+        params["usuario_id"] = usuario_id
+
+    result = await session.execute(
+        text(
+            """
+            with cultivo_scope as (
+              select c.id, c.especie_id, c.area_m2, c.fecha_siembra, c.fecha_estimada_cosecha
+              from cultivos c
+              where c.deleted_at is null
+                and (cast(:usuario_id as bigint) is null or c.usuario_id = cast(:usuario_id as bigint))
+            ),
+            costos_insumos as (
+              select cp.cultivo_id, sum(cp.monto) as inversion_insumos
+              from costos_produccion cp
+              join categorias_costo cc on cc.id = cp.categoria_id
+              where cp.deleted_at is null and cc.nombre = 'Insumos'
+              group by cp.cultivo_id
+            ),
+            compost_practicas as (
+              select pa.cultivo_id, sum(pa.cantidad) as compost_kg
+              from practicas_agricolas pa
+              join insumos i on i.id = pa.insumo_id
+              where pa.deleted_at is null and pa.cantidad is not null and i.nombre ilike '%compost%'
+              group by pa.cultivo_id
+            ),
+            cosechas_agg as (
+              select co.cultivo_id,
+                     sum(co.cantidad_inicial) as produccion_total,
+                     max(co.fecha_cosecha) as fecha_cosecha_real
+              from cosechas co
+              where co.deleted_at is null and co.cultivo_id is not null
+              group by co.cultivo_id
+            ),
+            ventas_agg as (
+              select co.cultivo_id, sum(v.cantidad) as venta_cantidad, sum(v.total) as venta_soles
+              from ventas v
+              join cosechas co on co.id = v.cosecha_id
+              where v.deleted_at is null and co.cultivo_id is not null
+              group by co.cultivo_id
+            ),
+            autoconsumo_agg as (
+              select co.cultivo_id, sum(a.cantidad) as autoconsumo_total
+              from autoconsumos a
+              join cosechas co on co.id = a.cosecha_id
+              where a.deleted_at is null and co.cultivo_id is not null
+              group by co.cultivo_id
+            )
+            select e.nombre as hortaliza,
+                   coalesce(sum(cs.area_m2), 0) as area_m2,
+                   max(cs.fecha_siembra) as fecha_siembra,
+                   max(coalesce(ca.fecha_cosecha_real, cs.fecha_estimada_cosecha)) as fecha_cosecha,
+                   coalesce(sum(cp.compost_kg), 0) as compost_kg,
+                   coalesce(sum(ci.inversion_insumos), 0) as inversion_insumos,
+                   coalesce(sum(ca.produccion_total), 0) as produccion_total,
+                   coalesce(sum(aa.autoconsumo_total), 0) as autoconsumo_total,
+                   coalesce(sum(va.venta_cantidad), 0) as venta_cantidad,
+                   coalesce(sum(va.venta_soles), 0) as venta_soles,
+                   coalesce(sum(va.venta_soles), 0) - coalesce(sum(ci.inversion_insumos), 0) as utilidad
+            from cultivo_scope cs
+            join especies e on e.id = cs.especie_id
+            left join costos_insumos ci on ci.cultivo_id = cs.id
+            left join compost_practicas cp on cp.cultivo_id = cs.id
+            left join cosechas_agg ca on ca.cultivo_id = cs.id
+            left join ventas_agg va on va.cultivo_id = cs.id
+            left join autoconsumo_agg aa on aa.cultivo_id = cs.id
+            group by e.nombre
+            order by e.nombre
+            """
+        ),
+        params,
+    )
+    return [ProduccionHortalizaOut.model_validate(dict(row)) for row in result.mappings().all()]
+
+
+@router.get("/produccion-zona", response_model=list[ProduccionZonaOut])
+async def get_produccion_por_zona(
+    current_user: CurrentUser = Depends(require_role("admin")),
+    session: AsyncSession = Depends(get_session),
+) -> list[ProduccionZonaOut]:
+    """Consolida la producción por zona geográfica del productor (ej. "Zona
+    P.J."), para que la Coordinación Social compare entre zonas."""
+    result = await session.execute(
+        text(
+            """
+            with cultivo_scope as (
+              select c.id, c.usuario_id, c.area_m2
+              from cultivos c
+              where c.deleted_at is null
+            ),
+            cosechas_agg as (
+              select co.cultivo_id, sum(co.cantidad_inicial) as produccion_total
+              from cosechas co
+              where co.deleted_at is null and co.cultivo_id is not null
+              group by co.cultivo_id
+            ),
+            ventas_agg as (
+              select co.cultivo_id, sum(v.total) as venta_soles
+              from ventas v
+              join cosechas co on co.id = v.cosecha_id
+              where v.deleted_at is null and co.cultivo_id is not null
+              group by co.cultivo_id
+            )
+            select coalesce(u.zona, 'Sin zona asignada') as zona,
+                   count(distinct u.id) as productores,
+                   coalesce(sum(cs.area_m2), 0) as area_m2,
+                   coalesce(sum(ca.produccion_total), 0) as produccion_total,
+                   coalesce(sum(va.venta_soles), 0) as venta_soles
+            from usuarios u
+            join cultivo_scope cs on cs.usuario_id = u.id
+            left join cosechas_agg ca on ca.cultivo_id = cs.id
+            left join ventas_agg va on va.cultivo_id = cs.id
+            where u.deleted_at is null
+            group by coalesce(u.zona, 'Sin zona asignada')
+            order by zona
+            """
+        )
+    )
+    return [ProduccionZonaOut.model_validate(dict(row)) for row in result.mappings().all()]

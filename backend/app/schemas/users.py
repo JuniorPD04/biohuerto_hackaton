@@ -58,8 +58,9 @@ class UserUpdate(_PhoneMixin):
     direccion: str | None = Field(default=None, max_length=240)
     latitud: float | None = Field(default=None, ge=-90, le=90)
     longitud: float | None = Field(default=None, ge=-180, le=180)
+    zona: str | None = Field(default=None, max_length=80)
 
-    @field_validator("nombre", "direccion", mode="before")
+    @field_validator("nombre", "direccion", "zona", mode="before")
     @classmethod
     def sanitize_text(cls, value: str | None) -> str | None:
         return clean_text(value)
@@ -73,8 +74,9 @@ class UserAdminUpdate(_PhoneMixin):
     direccion: str | None = Field(default=None, max_length=240)
     latitud: float | None = Field(default=None, ge=-90, le=90)
     longitud: float | None = Field(default=None, ge=-180, le=180)
+    zona: str | None = Field(default=None, max_length=80)
 
-    @field_validator("nombre", "direccion", mode="before")
+    @field_validator("nombre", "direccion", "zona", mode="before")
     @classmethod
     def sanitize_text(cls, value: str | None) -> str | None:
         return clean_text(value)
@@ -92,6 +94,7 @@ class UserOut(BaseModel):
     direccion: str | None = None
     latitud: float | None = None
     longitud: float | None = None
+    zona: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -86,6 +86,7 @@ async def create_monitoreo(
 async def list_monitoreo(
     cultivo_id: UUID | None = Query(default=None),
     biohuerto_id: str | None = Query(default=None),
+    usuario_id: int | None = Query(default=None),
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[MonitoreoOut]:
@@ -98,6 +99,9 @@ async def list_monitoreo(
     if biohuerto_id:
         where.append("cu.biohuerto_id = :biohuerto_id")
         params["biohuerto_id"] = biohuerto_id
+    if usuario_id is not None and current_user.rol == "admin":
+        where.append("cu.usuario_id = :usuario_id")
+        params["usuario_id"] = usuario_id
     result = await session.execute(
         text(
             _MONITOREO_SELECT

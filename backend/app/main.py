@@ -16,6 +16,7 @@ from app.routers import (
     acceso,
     alertas,
     auth,
+    autoconsumos,
     biohuertos,
     campanias,
     catalogos,
@@ -69,6 +70,7 @@ app.include_router(diagnostico.router)
 app.include_router(rag.router)
 app.include_router(recomendaciones.router)
 app.include_router(cosechas.router)
+app.include_router(autoconsumos.router)
 app.include_router(ventas.router)
 app.include_router(dashboard.router)
 app.include_router(campanias.router)

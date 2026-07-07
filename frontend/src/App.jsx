@@ -23,6 +23,8 @@ const Entidades = lazy(() => import("./pages/Entidades.jsx"));
 const Mercado = lazy(() => import("./pages/Mercado.jsx"));
 const Ventas = lazy(() => import("./pages/Ventas.jsx"));
 const NotificacionesAdmin = lazy(() => import("./pages/NotificacionesAdmin.jsx"));
+const Proyecto = lazy(() => import("./pages/Proyecto.jsx"));
+const TiendaPublica = lazy(() => import("./pages/TiendaPublica.jsx"));
 
 function BootScreen() {
   return (
@@ -60,6 +62,8 @@ export default function App() {
   return (
     <Suspense fallback={<BootScreen />}><Routes>
       <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
+      <Route path="/proyecto" element={<Proyecto />} />
+      <Route path="/tienda" element={<TiendaPublica />} />
       <Route
         path="/"
         element={

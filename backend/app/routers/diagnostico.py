@@ -2,6 +2,7 @@ import base64
 import binascii
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -207,14 +208,20 @@ async def create_diagnostico_guiado(
     session: AsyncSession = Depends(get_session),
 ) -> DiagnosticoOut:
     await _validate_scope(session, current_user, payload.biohuerto_id, payload.cultivo_id)
-    result, modelo_usado = await diagnostico_guiado(
-        especie=payload.especie,
-        sintomas=payload.sintomas,
-        zona_afectada=payload.zona_afectada,
-        tiempo_dias=payload.tiempo_dias,
-        parte_planta=payload.parte_planta,
-        observaciones=payload.observaciones_previas,
-    )
+    try:
+        result, modelo_usado = await diagnostico_guiado(
+            especie=payload.especie,
+            sintomas=payload.sintomas,
+            zona_afectada=payload.zona_afectada,
+            tiempo_dias=payload.tiempo_dias,
+            parte_planta=payload.parte_planta,
+            observaciones=payload.observaciones_previas,
+        )
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="El servicio de diagnóstico guiado no está disponible. Inténtalo más tarde.",
+        ) from exc
     return await _save_diagnostico(
         session=session,
         current_user=current_user,

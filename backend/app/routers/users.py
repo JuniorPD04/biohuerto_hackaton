@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 # devuelven texto plano en las columnas `telefono` y `direccion`.
 _USER_SELECT = """
     select u.id, u.email, u.nombre, r.codigo as rol, u.is_active,
-           u.created_at, u.updated_at, u.latitud, u.longitud,
+           u.created_at, u.updated_at, u.latitud, u.longitud, u.zona,
            pgp_sym_decrypt(u.telefono_encrypted,  cast(:enc_key as text)) as telefono,
            pgp_sym_decrypt(u.direccion_encrypted, cast(:enc_key as text)) as direccion
     from usuarios u
@@ -79,6 +79,9 @@ async def update_me(
         if _geo in values:
             params[_geo] = values[_geo]
             clauses.append(f"{_geo} = :{_geo}")
+    if "zona" in values:
+        params["zona"] = values["zona"]
+        clauses.append("zona = :zona")
 
     await session.execute(
         text(
@@ -250,6 +253,9 @@ async def admin_update_user(
         if _geo in values:
             params[_geo] = values[_geo]
             clauses.append(f"{_geo} = :{_geo}")
+    if "zona" in values:
+        params["zona"] = values["zona"]
+        clauses.append("zona = :zona")
 
     result = await session.execute(
         text(f"update usuarios set {', '.join(clauses)} where id = :user_id and deleted_at is null"),

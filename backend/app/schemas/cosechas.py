@@ -54,6 +54,7 @@ class CosechaOut(BaseModel):
     productor_telefono: str | None = None
     nombre_producto: str
     cantidad: Decimal
+    cantidad_inicial: Decimal
     unidad_id: int | None = None
     unidad: str | None = None
     precio_referencial: Decimal

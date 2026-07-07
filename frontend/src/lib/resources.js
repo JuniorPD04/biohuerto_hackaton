@@ -152,6 +152,16 @@ export const accesoApi = {
     unwrap(api.put(`/api/acceso/roles/${rolId}/permisos`, { permisos })),
 };
 
+export const autoconsumosApi = {
+  crear: (body) => unwrap(api.post("/api/autoconsumos", body)),
+  listar: (params) => unwrap(api.get("/api/autoconsumos", { params })),
+};
+
+export const produccionApi = {
+  porHortaliza: (params) => unwrap(api.get("/api/trazabilidad/produccion", { params })),
+  porZona: () => unwrap(api.get("/api/trazabilidad/produccion-zona")),
+};
+
 export const ventasApi = {
   crearRonda: (body) => unwrap(api.post("/api/ventas/rondas", body)),
   listarRondas: (params) => unwrap(api.get("/api/ventas/rondas", { params })),

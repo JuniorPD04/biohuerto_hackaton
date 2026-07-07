@@ -71,3 +71,5 @@ automatica usando `MIGRATION_DB_PASSWORD`. Puede desactivarse con
 | 003 | `003_admin_notification_campaigns.sql` | Campañas manuales del superadministrador. |
 | 004 | `004_repair_notification_deliveries.sql` | Repara una migracion 002 incompleta. |
 | 005 | `005_ventas.sql` | Punto de venta directo: rondas de venta, ventas y permiso `ventas.gestion`. |
+| 006 | `006_produccion.sql` | Autoconsumo (tabla `autoconsumos`) y `cosechas.cantidad_inicial` para el registro de producción. |
+| 007 | `007_zona_y_catalogos.sql` | `usuarios.zona` (reportes por zona) y catálogos "Preparación de terreno" / "RRSSOO". |

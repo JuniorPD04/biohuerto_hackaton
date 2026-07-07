@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   Card,
   PageHeader,
@@ -244,7 +244,9 @@ export default function Usuarios() {
 }
 
 function UsuarioModal({ user, role, onClose }) {
+  const navigate = useNavigate();
   if (!user) return null;
+  const esProductor = user.rol === "productor";
   return (
     <Modal
       open={!!user}
@@ -252,6 +254,20 @@ function UsuarioModal({ user, role, onClose }) {
       title={user.nombre}
       subtitle={`#${user.id} · ${ROL_LABEL[user.rol] || role}`}
       width={580}
+      footer={
+        esProductor ? (
+          <Button
+            variant="secondary"
+            icon="activity"
+            onClick={() => {
+              onClose();
+              navigate(`/monitoreo?productor=${user.id}`);
+            }}
+          >
+            Ver monitoreo de este productor
+          </Button>
+        ) : undefined
+      }
     >
       <div style={{ display: "grid", gap: 22 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "18px 20px", background: "#fff", border: "1px solid var(--line)", borderRadius: 16 }}>
@@ -269,6 +285,7 @@ function UsuarioModal({ user, role, onClose }) {
           <DetailRow icon="bell" label="Correo electrónico" value={user.email} />
           <DetailRow icon="activity" label="Teléfono" value={user.telefono} mono />
           <DetailRow icon="pin" label="Dirección" value={user.direccion} full />
+          {esProductor && <DetailRow icon="globe" label="Zona" value={user.zona} />}
           <DetailRow icon="calendar" label="Fecha de registro" value={fmtFecha(user.created_at)} mono />
           <DetailRow icon="clock" label="Última actualización" value={fmtFecha(user.updated_at)} mono />
         </div>
@@ -376,17 +393,23 @@ function RegistrarUsuarioModal({ open, rol, onClose, onCreated }) {
 
 function EditarUsuarioModal({ user, onClose, onSaved }) {
   const toast = useToast();
-  const [form, setForm] = useState({ nombre: "", telefono: "", direccion: "" });
+  const [form, setForm] = useState({ nombre: "", telefono: "", direccion: "", zona: "" });
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   useEffect(() => {
     if (user) {
-      setForm({ nombre: user.nombre || "", telefono: sanitizePhone(user.telefono), direccion: user.direccion || "" });
+      setForm({
+        nombre: user.nombre || "",
+        telefono: sanitizePhone(user.telefono),
+        direccion: user.direccion || "",
+        zona: user.zona || "",
+      });
     }
   }, [user]);
 
   if (!user) return null;
+  const esProductor = user.rol === "productor";
 
   const submit = async () => {
     if (!form.nombre.trim()) {
@@ -399,6 +422,7 @@ function EditarUsuarioModal({ user, onClose, onSaved }) {
         nombre: form.nombre,
         telefono: form.telefono || null,
         direccion: form.direccion || null,
+        ...(esProductor ? { zona: form.zona || null } : {}),
       });
       toast("Usuario actualizado");
       onSaved();
@@ -448,6 +472,11 @@ function EditarUsuarioModal({ user, onClose, onSaved }) {
             <Input value={form.direccion} onChange={set("direccion")} placeholder="Av. Siempre Viva 123" />
           </Field>
         </div>
+        {esProductor && (
+          <Field label="Zona" hint="Sector o zona del productor, ej. &quot;Zona P.J. San Martín&quot;.">
+            <Input value={form.zona} onChange={set("zona")} placeholder="Ej: Zona P.J. San Martín" />
+          </Field>
+        )}
       </div>
     </Modal>
   );

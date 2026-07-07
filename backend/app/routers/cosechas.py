@@ -18,7 +18,7 @@ _COSECHA_SELECT = """
     select co.id::text, co.cultivo_id::text, e.nombre as cultivo, co.usuario_id,
            u.nombre as productor,
            pgp_sym_decrypt(u.telefono_encrypted, cast(:enc_key as text)) as productor_telefono,
-           co.nombre_producto, co.cantidad, co.unidad_id, un.codigo as unidad,
+           co.nombre_producto, co.cantidad, co.cantidad_inicial, co.unidad_id, un.codigo as unidad,
            co.precio_referencial, co.fecha_cosecha, co.link_whatsapp,
            pgp_sym_decrypt(co.telefono_encrypted, cast(:enc_key as text)) as telefono,
            co.estado, co.published_at, co.created_at, co.updated_at,
@@ -142,12 +142,12 @@ async def create_cosecha(
         text(
             """
             insert into cosechas (
-              cultivo_id, usuario_id, nombre_producto, cantidad, unidad_id,
+              cultivo_id, usuario_id, nombre_producto, cantidad, cantidad_inicial, unidad_id,
               precio_referencial, fecha_cosecha, link_whatsapp,
               telefono_encrypted, estado, published_at
             )
             values (
-              :cultivo_id, :usuario_id, :nombre_producto, :cantidad,
+              :cultivo_id, :usuario_id, :nombre_producto, :cantidad, :cantidad,
               coalesce(:unidad_id, (select id from unidades where codigo = 'kg')),
               :precio_referencial, :fecha_cosecha, :link_whatsapp,
               case when cast(:telefono as text) is null then null

@@ -163,7 +163,8 @@ INSERT INTO tipos_practica(categoria_id, nombre) VALUES
   (1,'Compost / Abono orgánico'),(1,'Abono verde'),(1,'Sin agroquímicos'),
   (2,'Control biológico'),(2,'Trampas para plagas'),
   (3,'Riego eficiente'),(3,'Poda sanitaria'),
-  (3,'Rotación de cultivos'),(3,'Policultivo / Cultivos asociados'),(3,'Otro');
+  (3,'Rotación de cultivos'),(3,'Policultivo / Cultivos asociados'),
+  (3,'Preparación de terreno'),(3,'Otro');
 
 -- 1.6  Categorías de costo
 CREATE TABLE categorias_costo (
@@ -236,7 +237,8 @@ CREATE TABLE insumos (
 INSERT INTO insumos(nombre, es_sistema) VALUES
   ('Compost', TRUE), ('Humus de lombriz', TRUE), ('Biol', TRUE), ('Ceniza', TRUE),
   ('Jabón potásico', TRUE), ('Caldo bordelés', TRUE), ('Cal agrícola', TRUE),
-  ('Estiércol', TRUE), ('Abono verde', TRUE), ('Agua', TRUE);
+  ('Estiércol', TRUE), ('Abono verde', TRUE), ('Agua', TRUE),
+  ('Residuos sólidos orgánicos (RRSSOO)', TRUE);
 
 -- 1.11  Zonas de la planta (catálogo extensible) — para incidencias
 CREATE TABLE zonas_planta (
@@ -295,6 +297,7 @@ CREATE TABLE usuarios (
   direccion_encrypted BYTEA        NULL,
   latitud             NUMERIC(9,6) NULL,                  -- GPS para ubicar en mapa (en claro, como biohuertos)
   longitud            NUMERIC(9,6) NULL,
+  zona                VARCHAR(80)  NULL,                  -- zona/sector del productor (ej. "Zona P.J."), para reportes
   is_active           BOOLEAN      NOT NULL DEFAULT TRUE,
   created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -728,6 +731,7 @@ CREATE TABLE cosechas (
   usuario_id         BIGINT        NOT NULL REFERENCES usuarios(id) ON DELETE RESTRICT,
   nombre_producto    VARCHAR(140)  NOT NULL,
   cantidad           NUMERIC(10,2) NOT NULL CHECK (cantidad >= 0),
+  cantidad_inicial   NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (cantidad_inicial >= 0),
   unidad_id          SMALLINT      NOT NULL REFERENCES unidades(id),
   precio_referencial NUMERIC(10,2) NOT NULL CHECK (precio_referencial >= 0),
   fecha_cosecha      DATE          NOT NULL,
@@ -759,6 +763,22 @@ CREATE TABLE cosechas_intereses (
   mensaje       TEXT        NULL,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (cosecha_id, consumidor_id)
+);
+
+-- Autoconsumo: cantidad de una cosecha que el productor se queda (no vende).
+-- Descuenta cantidad igual que una venta, pero sin monto ni ronda asociada.
+CREATE TABLE autoconsumos (
+  id              UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
+  cosecha_id      UUID          NOT NULL REFERENCES cosechas(id) ON DELETE CASCADE,
+  usuario_id      BIGINT        NOT NULL REFERENCES usuarios(id) ON DELETE RESTRICT,
+  nombre_producto VARCHAR(140)  NOT NULL,
+  cultivo         VARCHAR(140)  NULL,
+  cantidad        NUMERIC(10,2) NOT NULL CHECK (cantidad > 0),
+  unidad_id       SMALLINT      NULL REFERENCES unidades(id),
+  fecha           DATE          NOT NULL,
+  notas           VARCHAR(200)  NULL,
+  created_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  deleted_at      TIMESTAMPTZ   NULL
 );
 
 -- ============================================================
@@ -966,6 +986,7 @@ CREATE TABLE rol_permisos (
 -- ============================================================
 CREATE INDEX idx_usuarios_rol         ON usuarios(rol_id);
 CREATE INDEX idx_usuarios_active      ON usuarios(is_active);
+CREATE INDEX idx_usuarios_zona        ON usuarios(zona) WHERE zona IS NOT NULL;
 CREATE INDEX idx_biohuertos_tipo      ON biohuertos(tipo_area_id);
 CREATE INDEX idx_biohuertos_estado    ON biohuertos(estado);
 CREATE INDEX idx_biohuertos_active    ON biohuertos(is_active);
@@ -1021,6 +1042,9 @@ CREATE INDEX idx_cosechas_cultivo     ON cosechas(cultivo_id);
 CREATE INDEX idx_cosechas_estado      ON cosechas(estado);
 CREATE INDEX idx_intereses_cosecha    ON cosechas_intereses(cosecha_id);
 CREATE INDEX idx_intereses_consumidor ON cosechas_intereses(consumidor_id);
+CREATE INDEX idx_autoconsumos_cosecha ON autoconsumos(cosecha_id);
+CREATE INDEX idx_autoconsumos_usuario ON autoconsumos(usuario_id);
+CREATE INDEX idx_autoconsumos_fecha   ON autoconsumos(fecha);
 CREATE INDEX idx_venta_rondas_usuario ON venta_rondas(usuario_id);
 CREATE INDEX idx_venta_rondas_fecha   ON venta_rondas(fecha);
 CREATE INDEX idx_ventas_ronda         ON ventas(ronda_id);
