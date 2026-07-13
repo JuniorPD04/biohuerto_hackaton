@@ -995,7 +995,6 @@ function DedicacionesTab({ biohuertoId }) {
 const TABS = [
   { id: "practicas", label: "Prácticas", icon: "recycle" },
   { id: "costos", label: "Costos", icon: "coins" },
-  { id: "dedicaciones", label: "Horas", icon: "clock" },
   { id: "produccion", label: "Producción", icon: "leaf" },
 ];
 
@@ -1047,8 +1046,6 @@ export default function Trazabilidad() {
         <PracticasTab biohuertoId={biohuertoId} />
       ) : tab === "costos" ? (
         <CostosTab biohuertoId={biohuertoId} />
-      ) : tab === "dedicaciones" ? (
-        <DedicacionesTab biohuertoId={biohuertoId} />
       ) : (
         <ProduccionTab />
       )}
