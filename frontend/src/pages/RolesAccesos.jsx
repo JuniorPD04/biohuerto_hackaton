@@ -43,6 +43,7 @@ const SECTIONS = [
     ],
   },
   { label: "Ofertas", modulos: ["cosechas"] },
+  { label: "Reportes", modulos: ["reportes"] },
 ];
 
 const pkey = (v, a) => `${v}:${a}`;

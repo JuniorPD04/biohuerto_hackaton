@@ -13,7 +13,6 @@ const Fitosanitario = lazy(() => import("./pages/Fitosanitario.jsx"));
 const Alertas = lazy(() => import("./pages/Alertas.jsx"));
 const Ofertas = lazy(() => import("./pages/Ofertas.jsx"));
 const Rag = lazy(() => import("./pages/Rag.jsx"));
-const Campanias = lazy(() => import("./pages/Campanias.jsx"));
 const Incidencias = lazy(() => import("./pages/Incidencias.jsx"));
 const Monitoreo = lazy(() => import("./pages/Monitoreo.jsx"));
 const Cuidados = lazy(() => import("./pages/Cuidados.jsx"));
@@ -23,6 +22,7 @@ const Entidades = lazy(() => import("./pages/Entidades.jsx"));
 const Mercado = lazy(() => import("./pages/Mercado.jsx"));
 const Ventas = lazy(() => import("./pages/Ventas.jsx"));
 const NotificacionesAdmin = lazy(() => import("./pages/NotificacionesAdmin.jsx"));
+const Reportes = lazy(() => import("./pages/Reportes.jsx"));
 const Proyecto = lazy(() => import("./pages/Proyecto.jsx"));
 const TiendaPublica = lazy(() => import("./pages/TiendaPublica.jsx"));
 
@@ -80,7 +80,6 @@ export default function App() {
         <Route path="biohuertos" element={<Biohuertos />} />
         <Route path="cultivos" element={<Cultivos />} />
         <Route path="cultivos/:id" element={<CultivoWorkspace />} />
-        <Route path="campanias" element={<Campanias />} />
         <Route path="monitoreo" element={<Monitoreo />} />
         <Route path="incidencias" element={<Incidencias />} />
         <Route path="cuidados" element={<Cuidados />} />
@@ -95,6 +94,8 @@ export default function App() {
         <Route path="roles" element={<RolesAccesos />} />
         <Route path="entidades" element={<Entidades />} />
         <Route path="notificaciones" element={<AdminOnly><NotificacionesAdmin /></AdminOnly>} />
+        <Route path="reportes" element={<Navigate to="/reportes/produccion" replace />} />
+        <Route path="reportes/:tab" element={<AdminOnly><Reportes /></AdminOnly>} />
       </Route>
       <Route path="*" element={<FallbackHome />} />
     </Routes></Suspense>

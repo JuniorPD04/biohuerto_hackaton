@@ -70,6 +70,8 @@ _BIOHUERTO_SELECT = """
            pgp_sym_decrypt(b.ubicacion_referencia_encrypted, cast(:enc_key as text)) as ubicacion_referencia,
            b.area_m2, b.descripcion,
            b.tipo_area_id, ta.nombre as tipo_area,
+           b.modalidad_id, md.nombre as modalidad,
+           b.comunidad_id, cm.nombre as comunidad,
            b.latitud, b.longitud, b.estado, b.grid_filas, b.grid_columnas, b.es_publico, b.is_active,
            b.created_at, b.updated_at,
            (select count(*) from cultivos c
@@ -80,6 +82,8 @@ _BIOHUERTO_SELECT = """
              order by a.created_at desc limit 1) as imagen
     from biohuertos b
     left join tipos_area ta on ta.id = b.tipo_area_id
+    left join modalidades md on md.id = b.modalidad_id
+    left join comunidades cm on cm.id = b.comunidad_id
 """
 
 
@@ -174,11 +178,13 @@ async def create_biohuerto(
     insert_sql = text(
         """
         insert into biohuertos
-            (tipo_area_id, nombre, codigo, abreviatura,
+            (tipo_area_id, modalidad_id, comunidad_id, nombre, codigo, abreviatura,
              ubicacion_referencia_encrypted, latitud, longitud, area_m2,
              descripcion, estado, grid_filas, grid_columnas, es_publico)
         values (
             coalesce(:tipo_area_id, (select id from tipos_area where codigo = 'biohuerto')),
+            coalesce(:modalidad_id, (select id from modalidades where codigo = 'casero')),
+            :comunidad_id,
             :nombre, :codigo, :abreviatura,
             case when cast(:ubicacion as text) is null then null
                  else pgp_sym_encrypt(cast(:ubicacion as text), cast(:enc_key as text)) end,
@@ -190,6 +196,8 @@ async def create_biohuerto(
     )
     base = {
         "tipo_area_id": payload.tipo_area_id,
+        "modalidad_id": payload.modalidad_id,
+        "comunidad_id": payload.comunidad_id,
         "nombre": payload.nombre,
         "abreviatura": abreviatura,
         "ubicacion": payload.ubicacion_referencia,
@@ -413,6 +421,12 @@ async def update_biohuerto(
     if "tipo_area_id" in values:
         params["tipo_area_id"] = values["tipo_area_id"]
         clauses.append("tipo_area_id = :tipo_area_id")
+    if "modalidad_id" in values:
+        params["modalidad_id"] = values["modalidad_id"]
+        clauses.append("modalidad_id = :modalidad_id")
+    if "comunidad_id" in values:
+        params["comunidad_id"] = values["comunidad_id"]
+        clauses.append("comunidad_id = :comunidad_id")
     if "estado" in values:
         params["estado"] = values["estado"]
         clauses.append("estado = :estado")

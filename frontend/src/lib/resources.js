@@ -28,6 +28,7 @@ export const cultivosApi = {
   update: (id, body) => localFirstUpdate("cultivos", id, body, () => unwrap(api.patch(`/api/cultivos/${id}`, body))),
   remove: (id) => localFirstDelete("cultivos", id, () => api.delete(`/api/cultivos/${id}`)),
   historial: (id) => unwrap(api.get(`/api/cultivos/${id}/historial`)),
+  campania: (id) => unwrap(api.get(`/api/cultivos/${id}/campania`)),
 };
 
 export const alertasApi = {
@@ -160,6 +161,21 @@ export const autoconsumosApi = {
 export const produccionApi = {
   porHortaliza: (params) => unwrap(api.get("/api/trazabilidad/produccion", { params })),
   porZona: () => unwrap(api.get("/api/trazabilidad/produccion-zona")),
+  porComunidad: () => unwrap(api.get("/api/trazabilidad/reporte-comunidad")),
+};
+
+// Bitácora de horas dedicadas por persona y biohuerto (tareas compartidas)
+export const dedicacionesApi = {
+  list: (params) => unwrap(api.get("/api/dedicaciones", { params })),
+  crear: (body) => unwrap(api.post("/api/dedicaciones", body)),
+  resumen: (biohuertoId) => unwrap(api.get("/api/dedicaciones/resumen", { params: { biohuerto_id: biohuertoId } })),
+};
+
+// Reportes estadísticos para la Coordinación (admin)
+export const reportesApi = {
+  general: () => unwrap(api.get("/api/reportes/general")),
+  inversionBiohuerto: () => unwrap(api.get("/api/reportes/inversion-biohuerto")),
+  inversionBiohuertoDetalle: (id) => unwrap(api.get(`/api/reportes/inversion-biohuerto/${id}`)),
 };
 
 export const ventasApi = {
@@ -171,9 +187,3 @@ export const ventasApi = {
   listarVentas: (params) => unwrap(api.get("/api/ventas", { params })),
 };
 
-export const campaniasApi = {
-  list: () => unwrap(api.get("/api/campanias")),
-  create: (body) => unwrap(api.post("/api/campanias", body)),
-  update: (id, body) => unwrap(api.patch(`/api/campanias/${id}`, body)),
-  remove: (id) => api.delete(`/api/campanias/${id}`),
-};

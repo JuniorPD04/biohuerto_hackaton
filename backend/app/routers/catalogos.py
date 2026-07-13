@@ -32,6 +32,12 @@ _READONLY: dict[str, str] = {
     "tipos-alerta": "select id, nombre from tipos_alerta order by nombre",
     "fuentes-monitoreo": "select id, codigo, nombre from fuentes_monitoreo order by id",
     "roles": "select id, codigo, descripcion from roles order by id",
+    "modalidades": "select id, codigo, nombre from modalidades order by id",
+    "actividades": "select id, codigo, nombre from actividades where is_active order by nombre",
+    "metodos-practica": (
+        "select id, tipo_practica_id, nombre from metodos_practica "
+        "where is_active order by nombre"
+    ),
 }
 
 # Catálogos extensibles: (tabla, extra, codigo=tiene columna codigo)
@@ -43,6 +49,7 @@ _EXTENSIBLE: dict[str, dict] = {
     "insumos": {"tabla": "insumos", "extra": None, "codigo": False},
     "zonas-planta": {"tabla": "zonas_planta", "extra": None, "codigo": False},
     "tipos-area": {"tabla": "tipos_area", "extra": None, "codigo": True},
+    "comunidades": {"tabla": "comunidades", "extra": None, "codigo": True},
 }
 
 

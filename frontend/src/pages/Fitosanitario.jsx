@@ -150,9 +150,9 @@ export default function Fitosanitario() {
                     </h3>
                     {d.confianza != null && (
                       <Badge
-                        bg={d.sano ? "#dcefd7" : "#fbe1de"}
-                        fg={d.sano ? "#2f6b34" : "#b23a2e"}
-                        dot={d.sano ? "#3f9a48" : "#d6584a"}
+                        bg={Number(d.confianza) > 70 ? "#dcefd7" : "#fbe1de"}
+                        fg={Number(d.confianza) > 70 ? "#2f6b34" : "#b23a2e"}
+                        dot={Number(d.confianza) > 70 ? "#3f9a48" : "#d6584a"}
                       >
                         {Math.round(Number(d.confianza))}% confianza
                       </Badge>
@@ -288,8 +288,15 @@ function DiagnosticoModal({ open, onClose, cultivos, toast, onCreated }) {
       });
       toast("Diagnóstico generado correctamente");
       onCreated();
-    } catch {
-      toast("No se pudo analizar la imagen ahora. Inténtalo más tarde.", "danger");
+    } catch (err) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      // 400 = no es planta / imagen inválida · 413 = muy grande → mostrar el motivo real.
+      if (detail && (status === 400 || status === 413)) {
+        toast(detail, "danger");
+      } else {
+        toast("No se pudo analizar la imagen ahora. Inténtalo más tarde.", "danger");
+      }
     } finally {
       setEnviando(false);
     }

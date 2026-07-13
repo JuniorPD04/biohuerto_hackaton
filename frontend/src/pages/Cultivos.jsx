@@ -24,7 +24,6 @@ import {
   cultivosApi,
   biohuertosApi,
   catalogosApi,
-  campaniasApi,
 } from "../lib/resources.js";
 import BiohuertoGrid, { celdasLabel, normalizeCeldas } from "../components/biohuerto/BiohuertoGrid.jsx";
 
@@ -107,8 +106,8 @@ function SectionMenu({ cultivoId, navigate }) {
   );
 }
 
-const COLS = "2fr 1fr .9fr .9fr .9fr 1.5fr";
-const HEAD = ["Cultivo", "Biohuerto", "Etapa", "Fecha est.", "Campaña", "Acciones"];
+const COLS = "2fr 1fr .9fr .9fr 1.5fr";
+const HEAD = ["Cultivo", "Biohuerto", "Etapa", "Fecha est.", "Acciones"];
 
 const EMPTY_FORM = {
   especie_id: "",
@@ -116,7 +115,6 @@ const EMPTY_FORM = {
   variedad: "",
   biohuerto_id: "",
   etapa_id: "",
-  campania_id: "",
   fecha_siembra: "",
   fecha_estimada_cosecha: "",
   cantidad: "",
@@ -136,7 +134,6 @@ export default function Cultivos() {
   const [especies, setEspecies] = useState([]);
   const [unidades, setUnidades] = useState([]);
   const [etapasCat, setEtapasCat] = useState([]);
-  const [campanias, setCampanias] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [q, setQ] = useState("");
@@ -175,29 +172,27 @@ export default function Cultivos() {
       .list("unidades")
       .then((d) => setUnidades(asList(d)))
       .catch(() => setUnidades([]));
+  // Recarga biohuertos y devuelve la lista fresca (para seleccionar uno recién creado).
+  const loadBiohuertos = async () => {
+    try {
+      const data = asList(await biohuertosApi.list());
+      setBiohuertos(data);
+      return data;
+    } catch {
+      return [];
+    }
+  };
 
   useEffect(() => {
     loadCultivos();
-    biohuertosApi
-      .list()
-      .then((data) => setBiohuertos(asList(data)))
-      .catch(() => setBiohuertos([]));
+    loadBiohuertos();
     loadEspecies();
     loadUnidades();
     catalogosApi
       .list("etapas")
       .then((d) => setEtapasCat(asList(d)))
       .catch(() => setEtapasCat([]));
-    campaniasApi
-      .list()
-      .then((d) => setCampanias(asList(d)))
-      .catch(() => setCampanias([]));
   }, []);
-
-  const campanas = useMemo(
-    () => [...new Set(rows.map((c) => c.campania).filter(Boolean))],
-    [rows]
-  );
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -215,14 +210,12 @@ export default function Cultivos() {
 
   const handleSubmit = async (form, mode, id) => {
     const etapaSel = etapasCat.find((e) => String(e.id) === String(form.etapa_id));
-    const campaniaSel = campanias.find((c) => String(c.id) === String(form.campania_id));
     const payload = {
       // biohuerto_id ahora es un UUID (string), no se convierte a número.
       biohuerto_id: form.biohuerto_id || null,
       especie_id: form.especie_id === "" ? null : Number(form.especie_id),
       unidad_id: form.unidad_id === "" ? null : Number(form.unidad_id),
       etapa: etapaSel?.codigo || "semillero",
-      campania: campaniaSel?.nombre || null,
       variedad: form.variedad.trim() || null,
       fecha_siembra: form.fecha_siembra || null,
       fecha_estimada_cosecha: form.fecha_estimada_cosecha || null,
@@ -312,14 +305,6 @@ export default function Cultivos() {
               <option key={e} value={e}>
                 {ETAPAS[e].label}
               </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Campaña / Temporada">
-          <Select value="" onChange={() => {}} disabled={campanas.length === 0}>
-            <option value="">Todas las campañas</option>
-            {campanas.map((c) => (
-              <option key={c}>{c}</option>
             ))}
           </Select>
         </Field>
@@ -454,11 +439,6 @@ export default function Cultivos() {
                     </span>
                   </div>
 
-                  {/* Campaña */}
-                  <div>
-                    <span className="text-[13.5px] text-muted-1">{c.campania || "Sin campaña"}</span>
-                  </div>
-
                   {/* Acciones */}
                   <div className="ml-auto flex items-center gap-[2px]">
                     <IconBtn name="eye" title="Ver detalle" onClick={() => setDetailModal(c)} />
@@ -496,10 +476,10 @@ export default function Cultivos() {
         especies={especies}
         unidades={unidades}
         etapasCat={etapasCat}
-        campanias={campanias}
         cultivos={rows}
         onReloadEspecies={loadEspecies}
         onReloadUnidades={loadUnidades}
+        onReloadBiohuertos={loadBiohuertos}
         onClose={() => setFormModal(null)}
         onSave={handleSubmit}
       />
@@ -538,7 +518,6 @@ function CultivoCard({ c, navigate, onOpen, onEdit, onToggle, onDelete }) {
         <div className="mt-4 grid gap-[9px]">
           <MetaLine icon="pin" text={`Biohuerto: ${c.biohuerto_nombre || "Sin biohuerto"}`} />
           <MetaLine icon="leaf" text={`Cosecha est.: ${fmtFecha(c.fecha_estimada_cosecha)}`} />
-          <MetaLine icon="leaf" text={`Campaña: ${c.campania || "Sin campaña"}`} />
         </div>
         <div className="mt-[18px] flex items-center gap-[10px] border-t border-line pt-4">
           <Button variant="ghost" icon="eye" size="sm" full onClick={onOpen}>
@@ -657,27 +636,34 @@ function CultivoFormModal({
   especies,
   unidades,
   etapasCat,
-  campanias,
   cultivos,
   onReloadEspecies,
   onReloadUnidades,
+  onReloadBiohuertos,
   onClose,
   onSave,
 }) {
   const isEdit = mode === "edit";
   const toast = useToast();
   const [form, setForm] = useState(EMPTY_FORM);
+  // Asistente por pasos (solo al registrar): 1 biohuerto · 2 qué siembra · 3 cuándo · 4 cuánto
+  const [pasoC, setPasoC] = useState(1);
+  const TOTAL_C = 4;
+  // Mini-formulario para crear un biohuerto sin salir del registro de cultivo.
+  const [nuevoBio, setNuevoBio] = useState(null); // null | { nombre, area }
+  const [creandoBio, setCreandoBio] = useState(false);
   const selectedBiohuerto = biohuertos.find((b) => String(b.id) === String(form.biohuerto_id));
 
   useEffect(() => {
     if (!open) return;
+    setPasoC(1);
+    setNuevoBio(null);
     setForm({
       especie_id: cultivo?.especie_id != null ? String(cultivo.especie_id) : "",
       unidad_id: cultivo?.unidad_id != null ? String(cultivo.unidad_id) : "",
       variedad: cultivo?.variedad || "",
       biohuerto_id: cultivo?.biohuerto_id != null ? String(cultivo.biohuerto_id) : "",
       etapa_id: cultivo?.etapa_id != null ? String(cultivo.etapa_id) : "",
-      campania_id: cultivo?.campania_id != null ? String(cultivo.campania_id) : "",
       fecha_siembra: (cultivo?.fecha_siembra || "").split("T")[0].split(" ")[0],
       fecha_estimada_cosecha: (cultivo?.fecha_estimada_cosecha || "")
         .split("T")[0]
@@ -730,9 +716,34 @@ function CultivoFormModal({
     }
   };
 
+  // Crea un biohuerto rápido (nombre + área) y lo selecciona, sin salir del flujo.
+  const crearBiohuertoRapido = async () => {
+    if (!nuevoBio?.nombre?.trim() || !nuevoBio?.area) {
+      toast("Escribe el nombre y el área del biohuerto", "danger");
+      return;
+    }
+    setCreandoBio(true);
+    try {
+      const creado = await biohuertosApi.create({
+        nombre: nuevoBio.nombre.trim(),
+        area_m2: Number(nuevoBio.area),
+      });
+      if (onReloadBiohuertos) await onReloadBiohuertos();
+      if (creado?.id) {
+        setForm((f) => ({ ...f, biohuerto_id: String(creado.id), celdas: [] }));
+      }
+      toast("Biohuerto creado y seleccionado");
+      setNuevoBio(null);
+    } catch (err) {
+      toast(err?.response?.data?.detail || "No se pudo crear el biohuerto", "danger");
+    } finally {
+      setCreandoBio(false);
+    }
+  };
+
   const submit = () => {
-    if (!form.especie_id || !form.biohuerto_id || form.celdas.length === 0) {
-      toast("Selecciona especie, biohuerto y al menos una celda", "danger");
+    if (!form.biohuerto_id || !form.especie_id) {
+      toast("Selecciona el biohuerto y la especie", "danger");
       return;
     }
     if (!form.fecha_siembra) {
@@ -742,141 +753,233 @@ function CultivoFormModal({
     onSave(form, mode, cultivo?.id);
   };
 
+  // --- Campos reutilizables (asistente de registro y formulario de edición) ---
+  const biohuertoField = (
+    <Field
+      label="¿En qué biohuerto?"
+      hint={biohuertos.length === 0 ? "Aún no tienes biohuertos: crea uno aquí mismo." : undefined}
+    >
+      {nuevoBio ? (
+        <div className="rounded-xl border-2 border-primary/40 bg-accent-50 p-3">
+          <div className="mb-2 text-[13px] font-extrabold text-primary">Nuevo biohuerto</div>
+          <div className="grid gap-2">
+            <Input
+              value={nuevoBio.nombre}
+              onChange={(e) => setNuevoBio((n) => ({ ...n, nombre: e.target.value }))}
+              placeholder="Nombre del biohuerto"
+            />
+            <Input
+              type="number"
+              value={nuevoBio.area}
+              onChange={(e) => setNuevoBio((n) => ({ ...n, area: e.target.value }))}
+              placeholder="Área (m²), ej: 50"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" icon="check" onClick={crearBiohuertoRapido} disabled={creandoBio}>
+                {creandoBio ? "Creando…" : "Crear y usar"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setNuevoBio(null)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <Select value={form.biohuerto_id} onChange={setBiohuerto} className="flex-1">
+            <option value="">Selecciona un biohuerto…</option>
+            {biohuertos.map((b) => (
+              <option key={b.id} value={b.id}>{b.nombre}</option>
+            ))}
+          </Select>
+          <button
+            type="button"
+            title="Crear biohuerto nuevo"
+            aria-label="Crear biohuerto nuevo"
+            onClick={() => setNuevoBio({ nombre: "", area: "" })}
+            className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full border border-primary bg-white text-primary transition-colors hover:bg-accent-50"
+          >
+            <Icon name="plus" size={20} stroke={2.2} />
+          </button>
+        </div>
+      )}
+    </Field>
+  );
+  const fotoField = (
+    <Field label="Foto del cultivo (opcional)">
+      <ImageUpload key={cultivo?.id || "new"} defaultUrl={cultivo?.imagen || ""} height={120} onChange={(url) => setForm((f) => ({ ...f, foto: url }))} />
+    </Field>
+  );
+  const especieField = (
+    <Field label="Especie">
+      <CatalogoSelect value={form.especie_id} onChange={setVal("especie_id")} options={especies} placeholder="Selecciona…" onAdd={addCatalogo("especies", onReloadEspecies, "Especie")} />
+    </Field>
+  );
+  const variedadField = (
+    <Field label="Variedad (opcional)">
+      <Input value={form.variedad} onChange={set("variedad")} placeholder="Ej: Red Pearl" />
+    </Field>
+  );
+  const etapaField = (
+    <Field label="Etapa actual">
+      <Select value={form.etapa_id} onChange={set("etapa_id")}>
+        <option value="">Selecciona…</option>
+        {etapasCat.map((e) => (<option key={e.id} value={e.id}>{e.nombre}</option>))}
+      </Select>
+    </Field>
+  );
+  const unidadField = (
+    <Field label="Unidad de cantidad">
+      <CatalogoSelect value={form.unidad_id} onChange={setVal("unidad_id")} options={unidades} placeholder="Selecciona…" onAdd={addCatalogo("unidades", onReloadUnidades, "Unidad")} />
+    </Field>
+  );
+  const fechaSiembraField = (
+    <Field label="Fecha de siembra">
+      <Input type="date" value={form.fecha_siembra} onChange={set("fecha_siembra")} />
+    </Field>
+  );
+  const fechaCosechaField = (
+    <Field label="Fecha estimada de cosecha (opcional)">
+      <Input type="date" value={form.fecha_estimada_cosecha} onChange={set("fecha_estimada_cosecha")} />
+    </Field>
+  );
+  const cantidadField = (
+    <Field label="Cantidad sembrada">
+      <Input type="number" value={form.cantidad} onChange={set("cantidad")} placeholder="0" />
+    </Field>
+  );
+  const areaField = (
+    <Field label="Área sembrada (m²)">
+      <Input type="number" value={form.area_m2} onChange={set("area_m2")} placeholder="0" />
+    </Field>
+  );
+  const notasField = (
+    <Field label="Notas (opcional)">
+      <Input value={form.notas} onChange={set("notas")} placeholder="Observaciones del cultivo" />
+    </Field>
+  );
+
   return (
     <Modal
       open={open}
       onClose={onClose}
-      width={960}
+      width={isEdit ? 720 : 680}
       title={isEdit ? "Editar cultivo" : "Registrar cultivo"}
       subtitle="Registra los datos fenológicos y de campaña"
       footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button icon="check" onClick={submit}>
-            {isEdit ? "Guardar cambios" : "Registrar"}
-          </Button>
-        </>
+        !isEdit ? (
+          <div className="flex w-full items-center justify-between gap-3">
+            <Button variant="ghost" size="lg" onClick={pasoC === 1 ? onClose : () => setPasoC((p) => p - 1)}>
+              {pasoC === 1 ? "Cancelar" : "← Atrás"}
+            </Button>
+            {pasoC < TOTAL_C ? (
+              <Button
+                size="lg"
+                onClick={() => setPasoC((p) => Math.min(TOTAL_C, p + 1))}
+                disabled={(pasoC === 1 && !form.biohuerto_id) || (pasoC === 2 && !form.especie_id) || (pasoC === 3 && !form.fecha_siembra)}
+              >
+                Siguiente →
+              </Button>
+            ) : (
+              <Button size="lg" icon="check" onClick={submit}>
+                Registrar cultivo
+              </Button>
+            )}
+          </div>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button icon="check" onClick={submit}>
+              Guardar cambios
+            </Button>
+          </>
+        )
       }
     >
-      <div className="flex items-start gap-6">
-        {/* LEFT: vista tipo bus para elegir celdas */}
-        <div className="w-[300px] flex-shrink-0">
-          <Field
-            label={`Celdas (${celdasLabel(form.celdas)})`}
-            hint="Selecciona una o varias celdas libres para este cultivo."
-          >
-            {selectedBiohuerto ? (
-              <BiohuertoGrid
-                biohuerto={selectedBiohuerto}
-                cultivos={cultivos.filter((c) => String(c.biohuerto_id) === String(selectedBiohuerto.id))}
-                selected={form.celdas}
-                currentCultivoId={cultivo?.id}
-                onToggle={toggleCelda}
-              />
-            ) : (
-              <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-line bg-chip px-4 text-center">
-                <Icon name="seedling" size={30} />
-                <span className="text-[13px] font-semibold text-muted-2">
-                  Selecciona un biohuerto para ver el mapa de celdas
-                </span>
-              </div>
-            )}
-          </Field>
+      {isEdit ? (
+        <div className="grid grid-cols-2 gap-[14px]">
+          {biohuertoField}
+          {especieField}
+          {variedadField}
+          {etapaField}
+          {unidadField}
+          {cantidadField}
+          {fechaSiembraField}
+          {fechaCosechaField}
+          <div className="col-span-2">{areaField}</div>
+          <div className="col-span-2">{fotoField}</div>
+          <div className="col-span-2">{notasField}</div>
         </div>
-
-        {/* RIGHT: campos del formulario — biohuerto primero */}
-        <div className="min-w-0 flex-1 grid gap-[14px] content-start">
-          <Field label="Biohuerto">
-            <Select value={form.biohuerto_id} onChange={setBiohuerto}>
-              <option value="">Selecciona un biohuerto…</option>
-              {biohuertos.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.nombre}
-                </option>
+      ) : (
+        <div className="mx-auto max-w-[560px] py-1">
+          {/* Barra de progreso */}
+          <div className="mb-7 flex items-center gap-3">
+            <span className="whitespace-nowrap text-[14px] font-extrabold text-muted-2">
+              Paso {pasoC} de {TOTAL_C}
+            </span>
+            <div className="flex flex-1 gap-[6px]">
+              {Array.from({ length: TOTAL_C }, (_, k) => k + 1).map((n) => (
+                <span
+                  key={n}
+                  className="h-[7px] flex-1 rounded-full transition-colors"
+                  style={{ background: n <= pasoC ? "var(--primary)" : "var(--line-2)" }}
+                />
               ))}
-            </Select>
-          </Field>
-
-          <Field label="Foto del cultivo">
-            <ImageUpload
-              key={cultivo?.id || "new"}
-              defaultUrl={cultivo?.imagen || ""}
-              height={120}
-              onChange={(url) => setForm((f) => ({ ...f, foto: url }))}
-            />
-          </Field>
-
-          <div className="grid grid-cols-2 gap-[14px]">
-            <Field label="Especie">
-              <CatalogoSelect
-                value={form.especie_id}
-                onChange={setVal("especie_id")}
-                options={especies}
-                placeholder="Selecciona…"
-                onAdd={addCatalogo("especies", onReloadEspecies, "Especie")}
-              />
-            </Field>
-            <Field label="Variedad (opcional)">
-              <Input value={form.variedad} onChange={set("variedad")} placeholder="Ej: Red Pearl" />
-            </Field>
-
-            <Field label="Etapa actual">
-              <Select value={form.etapa_id} onChange={set("etapa_id")}>
-                <option value="">Selecciona…</option>
-                {etapasCat.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.nombre}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Unidad de cantidad">
-              <CatalogoSelect
-                value={form.unidad_id}
-                onChange={setVal("unidad_id")}
-                options={unidades}
-                placeholder="Selecciona…"
-                onAdd={addCatalogo("unidades", onReloadUnidades, "Unidad")}
-              />
-            </Field>
-
-            <Field label="Campaña (opcional)">
-              <Select value={form.campania_id} onChange={set("campania_id")}>
-                <option value="">Sin campaña</option>
-                {campanias.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nombre}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Fecha de siembra">
-              <Input type="date" value={form.fecha_siembra} onChange={set("fecha_siembra")} />
-            </Field>
-
-            <Field label="Fecha estimada de cosecha">
-              <Input
-                type="date"
-                value={form.fecha_estimada_cosecha}
-                onChange={set("fecha_estimada_cosecha")}
-              />
-            </Field>
-            <Field label="Cantidad sembrada">
-              <Input type="number" value={form.cantidad} onChange={set("cantidad")} placeholder="0" />
-            </Field>
-
-            <Field label="Área sembrada (m²)" className="col-span-2">
-              <Input type="number" value={form.area_m2} onChange={set("area_m2")} placeholder="0" />
-            </Field>
-
-            <Field label="Notas (opcional)" className="col-span-2">
-              <Input value={form.notas} onChange={set("notas")} placeholder="Observaciones del cultivo" />
-            </Field>
+            </div>
           </div>
+
+          {pasoC === 1 && (
+            <div className="flex flex-col gap-5">
+              <div>
+                <h2 className="m-0 text-[24px] font-extrabold text-text">¿En qué biohuerto siembras?</h2>
+                <p className="mt-1 text-[15px] text-muted-2">Elige uno, o crea uno nuevo aquí mismo.</p>
+              </div>
+              {biohuertoField}
+            </div>
+          )}
+
+          {pasoC === 2 && (
+            <div className="flex flex-col gap-5">
+              <div>
+                <h2 className="m-0 text-[24px] font-extrabold text-text">¿Qué vas a sembrar?</h2>
+                <p className="mt-1 text-[15px] text-muted-2">La especie y, si quieres, la variedad.</p>
+              </div>
+              {especieField}
+              {variedadField}
+              {fotoField}
+            </div>
+          )}
+
+          {pasoC === 3 && (
+            <div className="flex flex-col gap-5">
+              <div>
+                <h2 className="m-0 text-[24px] font-extrabold text-text">¿Cuándo lo siembras?</h2>
+                <p className="mt-1 text-[15px] text-muted-2">Fecha de siembra y etapa actual.</p>
+              </div>
+              {fechaSiembraField}
+              {etapaField}
+              {fechaCosechaField}
+            </div>
+          )}
+
+          {pasoC === 4 && (
+            <div className="flex flex-col gap-5">
+              <div>
+                <h2 className="m-0 text-[24px] font-extrabold text-text">¿Cuánto sembraste?</h2>
+                <p className="mt-1 text-[15px] text-muted-2">Cantidad, unidad y detalles opcionales.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                {cantidadField}
+                {unidadField}
+              </div>
+              {areaField}
+              {notasField}
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </Modal>
   );
 }
@@ -889,6 +992,73 @@ function ReadField({ label, value, full }) {
         {value ?? "—"}
       </div>
     </Field>
+  );
+}
+
+/* ---------------- Línea de tiempo de la campaña (CALENDARIO, derivada) ---------------- */
+function CampaignTimeline({ cultivoId }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    if (!cultivoId) return;
+    let cancel = false;
+    cultivosApi
+      .campania(cultivoId)
+      .then((d) => {
+        if (!cancel) setData(d);
+      })
+      .catch(() => {});
+    return () => {
+      cancel = true;
+    };
+  }, [cultivoId]);
+
+  const hitos = [
+    { n: 1, label: "Preparación de terreno", fecha: data?.fecha_preparacion },
+    { n: 2, label: "Aplicación de compost", fecha: data?.fecha_compost },
+    { n: 3, label: "Siembra", fecha: data?.fecha_siembra },
+    { n: 4, label: "Cosecha", fecha: data?.fecha_cosecha },
+  ];
+  const cerrada = data?.estado === "cerrada";
+
+  return (
+    <div className="rounded-2xl border border-line bg-white p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <span className="text-[13px] font-extrabold uppercase tracking-[.05em] text-muted-2">
+          Calendario de campaña
+        </span>
+        <span
+          className="rounded-full px-3 py-1 text-[12.5px] font-bold"
+          style={
+            cerrada
+              ? { background: "#eef2ec", color: "#5a625a" }
+              : { background: "#dcefd7", color: "#2f6b34" }
+          }
+        >
+          {cerrada ? "Cerrada" : "Abierta"}
+        </span>
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        {hitos.map((h) => {
+          const cumplido = !!h.fecha && (h.n < 4 || cerrada);
+          return (
+            <div key={h.n} className="text-center">
+              <div
+                className="mx-auto mb-2 grid h-9 w-9 place-items-center rounded-full text-[15px] font-extrabold"
+                style={
+                  cumplido
+                    ? { background: "var(--primary)", color: "#fff" }
+                    : { background: "transparent", color: "var(--muted-2)", border: "2px dashed var(--line-2)" }
+                }
+              >
+                {h.n}
+              </div>
+              <div className="text-[12.5px] font-bold leading-tight text-text">{h.label}</div>
+              <div className="mt-1 text-[12px] text-muted-2">{h.fecha ? fmtFecha(h.fecha) : "—"}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -929,11 +1099,10 @@ function CultivoDetalleModal({ cultivo, onClose }) {
           <ReadField label="Fecha estimada de cosecha" value={fmt(c.fecha_estimada_cosecha)} />
           <ReadField label="Cantidad sembrada" value={cantidad} />
           <ReadField label="Área sembrada" value={area} />
-          <ReadField label="Celdas" value={celdas.length ? celdasLabel(celdas) : "—"} />
-          <ReadField label="Campaña" value={txt(c.campania)} />
           <ReadField label="Estado" value={c.is_active === false ? "Baja" : "Activo"} />
           {c.notas ? <ReadField label="Notas" value={c.notas} full /> : null}
         </div>
+        <CampaignTimeline cultivoId={c.id} />
       </div>
     </Modal>
   );

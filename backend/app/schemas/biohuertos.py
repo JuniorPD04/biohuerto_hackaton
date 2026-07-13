@@ -23,6 +23,8 @@ class BiohuertoCreate(BaseModel):
     area_m2: Decimal = Field(gt=0, max_digits=10, decimal_places=2)
     descripcion: str | None = Field(default=None, max_length=1000)
     tipo_area_id: int | None = None
+    modalidad_id: int | None = None  # comunitario / casero
+    comunidad_id: int | None = None  # P.J. donde se ubica el biohuerto
     abreviatura: str | None = Field(default=None, max_length=20)
     latitud: Decimal | None = Field(default=None, max_digits=9, decimal_places=6)
     longitud: Decimal | None = Field(default=None, max_digits=9, decimal_places=6)
@@ -50,6 +52,8 @@ class BiohuertoUpdate(BaseModel):
     area_m2: Decimal | None = Field(default=None, gt=0, max_digits=10, decimal_places=2)
     descripcion: str | None = Field(default=None, max_length=1000)
     tipo_area_id: int | None = None
+    modalidad_id: int | None = None  # comunitario / casero
+    comunidad_id: int | None = None  # P.J. donde se ubica el biohuerto
     abreviatura: str | None = Field(default=None, max_length=20)
     latitud: Decimal | None = Field(default=None, max_digits=9, decimal_places=6)
     longitud: Decimal | None = Field(default=None, max_digits=9, decimal_places=6)
@@ -80,6 +84,10 @@ class BiohuertoOut(BaseModel):
     descripcion: str | None = None
     tipo_area_id: int | None = None
     tipo_area: str | None = None
+    modalidad_id: int | None = None
+    modalidad: str | None = None
+    comunidad_id: int | None = None
+    comunidad: str | None = None
     abreviatura: str | None = None
     latitud: Decimal | None = None
     longitud: Decimal | None = None

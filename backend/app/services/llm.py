@@ -19,16 +19,21 @@ OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
 
 
 def extract_json(raw: str) -> dict[str, Any]:
-    """Extrae el primer objeto JSON de la respuesta del modelo (tolera ```json ...```)."""
+    """Extrae el primer objeto JSON de la respuesta del modelo.
+
+    Tolera envolturas ```json ...``` y, sobre todo, texto extra ANTES o DESPUÉS
+    del objeto (el modelo a veces agrega explicaciones). Usa raw_decode para leer
+    solo el primer objeto válido e ignorar lo que sobra ("Extra data").
+    """
     cleaned = raw.strip()
     if cleaned.startswith("```"):
         cleaned = cleaned.strip("`")
         cleaned = cleaned.removeprefix("json").strip()
     start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start >= 0 and end >= start:
-        cleaned = cleaned[start : end + 1]
-    return json.loads(cleaned)
+    if start < 0:
+        raise ValueError("La respuesta del modelo no contiene un objeto JSON")
+    obj, _ = json.JSONDecoder().raw_decode(cleaned[start:])
+    return obj
 
 
 async def openrouter_chat_json(

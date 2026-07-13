@@ -27,11 +27,10 @@ class CultivoCreate(BaseModel):
     celda_fila: int | None = Field(default=None, ge=1, le=30)
     celda_columna: int | None = Field(default=None, ge=1, le=30)
     celdas: list[CultivoCelda] | None = None
-    campania: str | None = Field(default=None, max_length=120)
     notas: str | None = Field(default=None, max_length=1000)
     imagen: str | None = None  # data URL (data:image/...;base64,...) opcional
 
-    @field_validator("variedad", "campania", "notas", mode="before")
+    @field_validator("variedad", "notas", mode="before")
     @classmethod
     def sanitize_text(cls, value: str | None) -> str | None:
         return clean_text(value)
@@ -61,12 +60,11 @@ class CultivoUpdate(BaseModel):
     celda_fila: int | None = Field(default=None, ge=1, le=30)
     celda_columna: int | None = Field(default=None, ge=1, le=30)
     celdas: list[CultivoCelda] | None = None
-    campania: str | None = Field(default=None, max_length=120)
     notas: str | None = Field(default=None, max_length=1000)
     is_active: bool | None = None
     imagen: str | None = None  # data URL nuevo, "" / null para quitar la imagen
 
-    @field_validator("variedad", "campania", "notas", mode="before")
+    @field_validator("variedad", "notas", mode="before")
     @classmethod
     def sanitize_text(cls, value: str | None) -> str | None:
         return clean_text(value)
@@ -101,8 +99,6 @@ class CultivoOut(BaseModel):
     celda_fila: int | None = None
     celda_columna: int | None = None
     celdas: list[CultivoCelda] = Field(default_factory=list)
-    campania_id: int | None = None
-    campania: str | None = None
     notas: str | None = None
     is_active: bool = True
     imagen: str | None = None

@@ -73,3 +73,8 @@ automatica usando `MIGRATION_DB_PASSWORD`. Puede desactivarse con
 | 005 | `005_ventas.sql` | Punto de venta directo: rondas de venta, ventas y permiso `ventas.gestion`. |
 | 006 | `006_produccion.sql` | Autoconsumo (tabla `autoconsumos`) y `cosechas.cantidad_inicial` para el registro de producción. |
 | 007 | `007_zona_y_catalogos.sql` | `usuarios.zona` (reportes por zona) y catálogos "Preparación de terreno" / "RRSSOO". |
+| 008 | `008_registro_produccion_v2.sql` | Modalidad del biohuerto (comunitario/casero), `metodos_practica` (+seed), `actividades` y `dedicaciones` (horas por persona), unidad "hora", categorías de costo Semilla/Abono/Mejorador, y vista RBAC `reportes.gestion`. |
+| 009 | `009_demo_logins.sql` | Fija la contraseña de demo `biohuerto2026` a un productor y un consumidor para probar los tres paneles. |
+| 010 | `010_comunidades.sql` | Catálogo `comunidades` (P.J., +seed) y `biohuertos.comunidad_id`: la comunidad es atributo de ubicación del biohuerto (una comunidad agrupa varios biohuertos). |
+| 011 | `011_drop_campanias.sql` | Elimina `cultivos.campania_id` y la tabla `campanias`: la campaña pasa a ser un calendario (timeline) DERIVADO por cultivo (prácticas + siembra + cosecha). |
+| 012 | `012_seed_demo.sql` | Datos DEMO (no cambia esquema): llena tablas vacías (cuidados, dedicaciones, autoconsumos, ventas, huella) y completa cultivos sin hijos + asigna comunidad/modalidad a biohuertos. Idempotente. |

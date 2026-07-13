@@ -33,7 +33,7 @@ _CULTIVO_SELECT = """
                   else '[]'::jsonb
              end
            ) as celdas,
-           c.campania_id, cmp.nombre as campania, c.notas, c.is_active,
+           c.notas, c.is_active,
            (select 'data:' || a.mime_type || ';base64,' || replace(encode(a.datos, 'base64'), E'\n', '')
               from archivos_adjuntos a
              where a.cultivo_id = c.id and a.es_principal
@@ -44,7 +44,6 @@ _CULTIVO_SELECT = """
     join especies e on e.id = c.especie_id
     left join unidades un on un.id = c.unidad_id
     left join biohuertos b on b.id = c.biohuerto_id
-    left join campanias cmp on cmp.id = c.campania_id
 """
 
 
@@ -334,14 +333,13 @@ async def create_cultivo(
         text(
             """
             insert into cultivos (
-              biohuerto_id, usuario_id, etapa_id, campania_id, especie_id, variedad,
+              biohuerto_id, usuario_id, etapa_id, especie_id, variedad,
               fecha_siembra, fecha_estimada_cosecha, cantidad, unidad_id, area_m2,
               celda_fila, celda_columna, notas
             )
             values (
               :biohuerto_id, :usuario_id,
               (select id from etapas_fenologicas where codigo = :etapa),
-              (select id from campanias where nombre = :campania),
               :especie_id, :variedad, :fecha_siembra, :fecha_estimada_cosecha,
               :cantidad,
               coalesce(:unidad_id, (select id from unidades where codigo = 'und')),
@@ -354,7 +352,6 @@ async def create_cultivo(
             "biohuerto_id": payload.biohuerto_id,
             "usuario_id": current_user.id,
             "etapa": payload.etapa,
-            "campania": payload.campania,
             "especie_id": payload.especie_id,
             "variedad": payload.variedad,
             "fecha_siembra": payload.fecha_siembra,
@@ -445,9 +442,6 @@ async def update_cultivo(
     if "etapa" in values:
         params["etapa"] = values["etapa"]
         clauses.append("etapa_id = (select id from etapas_fenologicas where codigo = :etapa)")
-    if "campania" in values:
-        params["campania"] = values["campania"]
-        clauses.append("campania_id = (select id from campanias where nombre = :campania)")
 
     if clauses:
         await session.execute(
@@ -514,3 +508,48 @@ async def get_cultivo_historial(
         cultivo=_to_cultivo_out(cultivo_row),
         historial=[dict(row) for row in historial.mappings().all()],
     )
+
+
+@router.get("/{cultivo_id}/campania")
+async def get_cultivo_campania(
+    cultivo_id: UUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Línea de tiempo de la campaña (CALENDARIO de la ficha), DERIVADA de lo ya
+    registrado: preparación de terreno y compost desde las prácticas; siembra
+    desde el cultivo; cosecha desde las cosechas. La campaña está "cerrada"
+    cuando ya hay una cosecha registrada."""
+    await _ensure_cultivo_access(session, cultivo_id, current_user)
+    row = (
+        await session.execute(
+            text(
+                """
+                select
+                  (select max(pa.fecha_aplicacion) from practicas_agricolas pa
+                     join tipos_practica tp on tp.id = pa.tipo_id
+                     where pa.cultivo_id = :id and pa.deleted_at is null
+                       and tp.nombre = 'Preparación de terreno') as fecha_preparacion,
+                  (select max(pa.fecha_aplicacion) from practicas_agricolas pa
+                     join tipos_practica tp on tp.id = pa.tipo_id
+                     where pa.cultivo_id = :id and pa.deleted_at is null
+                       and tp.nombre ilike '%compost%') as fecha_compost,
+                  (select fecha_siembra from cultivos where id = :id) as fecha_siembra,
+                  (select max(co.fecha_cosecha) from cosechas co
+                     where co.cultivo_id = :id and co.deleted_at is null) as fecha_cosecha_real,
+                  (select fecha_estimada_cosecha from cultivos where id = :id) as fecha_cosecha_estimada
+                """
+            ),
+            {"id": cultivo_id},
+        )
+    ).mappings().one()
+
+    cosecha_real = row["fecha_cosecha_real"]
+    return {
+        "fecha_preparacion": row["fecha_preparacion"],
+        "fecha_compost": row["fecha_compost"],
+        "fecha_siembra": row["fecha_siembra"],
+        "fecha_cosecha": cosecha_real or row["fecha_cosecha_estimada"],
+        "cosecha_realizada": cosecha_real is not None,
+        "estado": "cerrada" if cosecha_real is not None else "abierta",
+    }

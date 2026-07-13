@@ -16,6 +16,7 @@ from app.schemas.trazabilidad import (
     PracticaOut,
     ProduccionHortalizaOut,
     ProduccionZonaOut,
+    ReporteComunidadOut,
     TrazabilidadResumen,
 )
 from app.schemas.users import CurrentUser
@@ -25,6 +26,7 @@ router = APIRouter(prefix="/api/trazabilidad", tags=["trazabilidad"])
 # Las columnas es_sostenible / sin_agroquimicos se derivan de la categoria de la practica.
 _PRACTICA_SELECT = """
     select p.id::text as id, p.cultivo_id, tp.nombre as tipo, cp.nombre as categoria,
+           p.metodo_id, mp.nombre as metodo,
            p.descripcion, p.insumo_id, ins.nombre as insumo,
            p.cantidad, p.unidad_id, u.nombre as unidad,
            p.fecha_aplicacion as fecha,
@@ -33,6 +35,7 @@ _PRACTICA_SELECT = """
     from practicas_agricolas p
     join tipos_practica tp on tp.id = p.tipo_id
     join categorias_practica cp on cp.id = tp.categoria_id
+    left join metodos_practica mp on mp.id = p.metodo_id
     left join insumos ins on ins.id = p.insumo_id
     left join unidades u on u.id = p.unidad_id
     left join cultivos cu on cu.id = p.cultivo_id
@@ -44,6 +47,8 @@ _COSTO_SELECT = """
     select co.id::text as id, co.cultivo_id::text as cultivo_id, cc.nombre as categoria,
            co.descripcion, co.cantidad, co.unidad_id, u.nombre as unidad,
            co.monto, co.moneda, co.fecha,
+           case when co.cantidad is not null and co.cantidad > 0
+                then round(co.monto / co.cantidad, 2) end as costo_unitario,
            e.nombre as cultivo, b.id::text as biohuerto_id, b.nombre as biohuerto
     from costos_produccion co
     join categorias_costo cc on cc.id = co.categoria_id
@@ -77,12 +82,13 @@ async def create_practica(
         text(
             """
             insert into practicas_agricolas (
-              cultivo_id, usuario_id, tipo_id, descripcion,
+              cultivo_id, usuario_id, tipo_id, metodo_id, descripcion,
               insumo_id, cantidad, unidad_id, fecha_aplicacion
             )
             values (
               :cultivo_id, :usuario_id,
               (select id from tipos_practica where nombre = :tipo),
+              :metodo_id,
               :descripcion, :insumo_id, :cantidad,
               coalesce(:unidad_id, (select id from unidades where codigo = 'und')),
               :fecha_aplicacion
@@ -94,7 +100,8 @@ async def create_practica(
             "cultivo_id": payload.cultivo_id,
             "usuario_id": current_user.id,
             "tipo": payload.tipo,
-            "descripcion": payload.descripcion,
+            "metodo_id": payload.metodo_id,
+            "descripcion": payload.descripcion or "",
             "insumo_id": payload.insumo_id,
             "cantidad": payload.cantidad,
             "unidad_id": payload.unidad_id,
@@ -309,17 +316,45 @@ async def get_produccion_por_hortaliza(
               group by cp.cultivo_id
             ),
             compost_practicas as (
-              select pa.cultivo_id, sum(pa.cantidad) as compost_kg
+              select pa.cultivo_id,
+                     sum(pa.cantidad) as compost_kg,
+                     max(pa.fecha_aplicacion) as fecha_compost
               from practicas_agricolas pa
               join insumos i on i.id = pa.insumo_id
               where pa.deleted_at is null and pa.cantidad is not null and i.nombre ilike '%compost%'
               group by pa.cultivo_id
             ),
+            rrssoo_practicas as (
+              select pa.cultivo_id, sum(pa.cantidad) as rrssoo_kg
+              from practicas_agricolas pa
+              join insumos i on i.id = pa.insumo_id
+              where pa.deleted_at is null and pa.cantidad is not null and i.nombre ilike '%RRSSOO%'
+              group by pa.cultivo_id
+            ),
+            prep_practicas as (
+              select pa.cultivo_id, max(pa.fecha_aplicacion) as fecha_preparacion
+              from practicas_agricolas pa
+              join tipos_practica tp on tp.id = pa.tipo_id
+              where pa.deleted_at is null and tp.nombre = 'Preparación de terreno'
+              group by pa.cultivo_id
+            ),
+            otros_insumos_especie as (
+              select cu.especie_id, string_agg(distinct i.nombre, ', ' order by i.nombre) as otros_insumos
+              from practicas_agricolas pa
+              join cultivos cu on cu.id = pa.cultivo_id
+              join insumos i on i.id = pa.insumo_id
+              where pa.deleted_at is null and cu.deleted_at is null
+                and i.nombre not ilike '%compost%' and i.nombre not ilike '%RRSSOO%'
+                and (cast(:usuario_id as bigint) is null or cu.usuario_id = cast(:usuario_id as bigint))
+              group by cu.especie_id
+            ),
             cosechas_agg as (
               select co.cultivo_id,
                      sum(co.cantidad_inicial) as produccion_total,
-                     max(co.fecha_cosecha) as fecha_cosecha_real
+                     max(co.fecha_cosecha) as fecha_cosecha_real,
+                     max(un.nombre) as unidad_nombre
               from cosechas co
+              left join unidades un on un.id = co.unidad_id
               where co.deleted_at is null and co.cultivo_id is not null
               group by co.cultivo_id
             ),
@@ -339,11 +374,16 @@ async def get_produccion_por_hortaliza(
             )
             select e.nombre as hortaliza,
                    coalesce(sum(cs.area_m2), 0) as area_m2,
+                   max(pp.fecha_preparacion) as fecha_preparacion,
                    max(cs.fecha_siembra) as fecha_siembra,
                    max(coalesce(ca.fecha_cosecha_real, cs.fecha_estimada_cosecha)) as fecha_cosecha,
                    coalesce(sum(cp.compost_kg), 0) as compost_kg,
+                   max(cp.fecha_compost) as fecha_compost,
+                   coalesce(sum(rp.rrssoo_kg), 0) as rrssoo_kg,
+                   max(oie.otros_insumos) as otros_insumos,
                    coalesce(sum(ci.inversion_insumos), 0) as inversion_insumos,
                    coalesce(sum(ca.produccion_total), 0) as produccion_total,
+                   coalesce(max(ca.unidad_nombre), 'Kilogramo') as produccion_unidad,
                    coalesce(sum(aa.autoconsumo_total), 0) as autoconsumo_total,
                    coalesce(sum(va.venta_cantidad), 0) as venta_cantidad,
                    coalesce(sum(va.venta_soles), 0) as venta_soles,
@@ -352,9 +392,12 @@ async def get_produccion_por_hortaliza(
             join especies e on e.id = cs.especie_id
             left join costos_insumos ci on ci.cultivo_id = cs.id
             left join compost_practicas cp on cp.cultivo_id = cs.id
+            left join rrssoo_practicas rp on rp.cultivo_id = cs.id
+            left join prep_practicas pp on pp.cultivo_id = cs.id
             left join cosechas_agg ca on ca.cultivo_id = cs.id
             left join ventas_agg va on va.cultivo_id = cs.id
             left join autoconsumo_agg aa on aa.cultivo_id = cs.id
+            left join otros_insumos_especie oie on oie.especie_id = e.id
             group by e.nombre
             order by e.nombre
             """
@@ -408,3 +451,97 @@ async def get_produccion_por_zona(
         )
     )
     return [ProduccionZonaOut.model_validate(dict(row)) for row in result.mappings().all()]
+
+
+@router.get("/reporte-comunidad", response_model=list[ReporteComunidadOut])
+async def get_reporte_comunidad(
+    current_user: CurrentUser = Depends(require_role("admin")),
+    session: AsyncSession = Depends(get_session),
+) -> list[ReporteComunidadOut]:
+    """Reporte por comunidad (hoja "Ingresos Comunit" de la ficha): desglose
+    comunitario/individual, siembras/cosechas, insumos orgánicos, producción,
+    consumo, inversión e ingresos. La comunidad se toma de la zona del productor."""
+    result = await session.execute(
+        text(
+            """
+            with base as (
+              select c.id as cultivo_id, c.usuario_id, c.biohuerto_id,
+                     coalesce(cm.nombre, 'Sin comunidad asignada') as comunidad,
+                     coalesce(m.codigo, 'casero') as modalidad,
+                     b.area_m2 as bio_area
+              from cultivos c
+              join usuarios u on u.id = c.usuario_id
+              join biohuertos b on b.id = c.biohuerto_id
+              left join modalidades m on m.id = b.modalidad_id
+              left join comunidades cm on cm.id = b.comunidad_id
+              where c.deleted_at is null and u.deleted_at is null and b.deleted_at is null
+            ),
+            bio_dim as (select distinct comunidad, biohuerto_id, modalidad, bio_area from base),
+            bio_counts as (
+              select comunidad,
+                count(*) filter (where modalidad = 'comunitario') as biohuertos_comunitarios,
+                count(*) filter (where modalidad = 'casero')      as biohuertos_caseros,
+                coalesce(sum(bio_area) filter (where modalidad = 'comunitario'), 0) as area_comunitaria,
+                coalesce(sum(bio_area) filter (where modalidad = 'casero'), 0)      as area_casera
+              from bio_dim group by comunidad
+            ),
+            cosechas_c as (
+              select cultivo_id, count(*) as n_cos, sum(cantidad_inicial) as produccion_total
+              from cosechas where deleted_at is null and cultivo_id is not null group by cultivo_id
+            ),
+            ventas_c as (
+              select co.cultivo_id, sum(v.cantidad) as venta_cantidad, sum(v.total) as ingresos
+              from ventas v join cosechas co on co.id = v.cosecha_id
+              where v.deleted_at is null and co.cultivo_id is not null group by co.cultivo_id
+            ),
+            auto_c as (
+              select co.cultivo_id, sum(a.cantidad) as autoconsumo_total
+              from autoconsumos a join cosechas co on co.id = a.cosecha_id
+              where a.deleted_at is null and co.cultivo_id is not null group by co.cultivo_id
+            ),
+            costos_c as (
+              select cultivo_id, sum(monto) as inversion
+              from costos_produccion where deleted_at is null group by cultivo_id
+            ),
+            compost_c as (
+              select pa.cultivo_id, sum(pa.cantidad) as compost_kg
+              from practicas_agricolas pa join insumos i on i.id = pa.insumo_id
+              where pa.deleted_at is null and pa.cantidad is not null and i.nombre ilike '%compost%'
+              group by pa.cultivo_id
+            ),
+            rrssoo_c as (
+              select pa.cultivo_id, sum(pa.cantidad) as rrssoo_kg
+              from practicas_agricolas pa join insumos i on i.id = pa.insumo_id
+              where pa.deleted_at is null and pa.cantidad is not null and i.nombre ilike '%RRSSOO%'
+              group by pa.cultivo_id
+            )
+            select b.comunidad,
+                   coalesce(bc.biohuertos_comunitarios, 0) as biohuertos_comunitarios,
+                   coalesce(bc.biohuertos_caseros, 0)      as biohuertos_caseros,
+                   coalesce(bc.area_comunitaria, 0)        as area_comunitaria,
+                   coalesce(bc.area_casera, 0)             as area_casera,
+                   count(distinct b.usuario_id)            as hogares,
+                   count(distinct b.cultivo_id)            as siembras,
+                   coalesce(sum(cc.n_cos), 0)              as cosechas,
+                   coalesce(sum(rr.rrssoo_kg), 0)          as rrssoo_kg,
+                   coalesce(sum(cm.compost_kg), 0)         as compost_kg,
+                   coalesce(sum(cc.produccion_total), 0)   as produccion_total,
+                   coalesce(sum(ac.autoconsumo_total), 0)  as autoconsumo_total,
+                   coalesce(sum(vc.venta_cantidad), 0)     as venta_cantidad,
+                   coalesce(sum(co.inversion), 0)          as inversion,
+                   coalesce(sum(vc.ingresos), 0)           as ingresos
+            from base b
+            left join bio_counts bc on bc.comunidad = b.comunidad
+            left join cosechas_c cc on cc.cultivo_id = b.cultivo_id
+            left join ventas_c vc on vc.cultivo_id = b.cultivo_id
+            left join auto_c ac on ac.cultivo_id = b.cultivo_id
+            left join costos_c co on co.cultivo_id = b.cultivo_id
+            left join compost_c cm on cm.cultivo_id = b.cultivo_id
+            left join rrssoo_c rr on rr.cultivo_id = b.cultivo_id
+            group by b.comunidad, bc.biohuertos_comunitarios, bc.biohuertos_caseros,
+                     bc.area_comunitaria, bc.area_casera
+            order by b.comunidad
+            """
+        )
+    )
+    return [ReporteComunidadOut.model_validate(dict(row)) for row in result.mappings().all()]

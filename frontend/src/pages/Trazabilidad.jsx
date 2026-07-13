@@ -22,6 +22,7 @@ import {
   catalogosApi,
   produccionApi,
   usuariosApi,
+  dedicacionesApi,
 } from "../lib/resources.js";
 import { useToast } from "../components/ui/Toast.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -79,6 +80,7 @@ function CatalogSelect({ catalogo, items, value, onChange, onReload, placeholder
 const PRACTICA_FORM = {
   cultivo_id: "",
   tipo: "",
+  metodo_id: "",
   descripcion: "",
   insumo_id: "",
   cantidad: "",
@@ -91,6 +93,7 @@ function PracticaModal({ open, onClose, onSave }) {
   const [saving, setSaving] = useState(false);
   const [cultivos, setCultivos] = useState([]);
   const [tipos, setTipos] = useState([]);
+  const [metodos, setMetodos] = useState([]);
   const [insumos, setInsumos] = useState([]);
   const [unidades, setUnidades] = useState([]);
 
@@ -100,15 +103,17 @@ function PracticaModal({ open, onClose, onSave }) {
     let cancel = false;
     (async () => {
       try {
-        const [cul, tip, ins, uni] = await Promise.all([
+        const [cul, tip, met, ins, uni] = await Promise.all([
           cultivosApi.list(),
           catalogosApi.list("tipos-practica"),
+          catalogosApi.list("metodos-practica"),
           catalogosApi.list("insumos"),
           catalogosApi.list("unidades"),
         ]);
         if (cancel) return;
         setCultivos(asList(cul));
         setTipos(asList(tip));
+        setMetodos(asList(met));
         setInsumos(asList(ins));
         setUnidades(asList(uni));
       } catch {
@@ -123,6 +128,10 @@ function PracticaModal({ open, onClose, onSave }) {
   if (!open) return null;
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const setVal = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+  // Al cambiar el tipo, se limpia el método (los métodos dependen del tipo).
+  const onTipoChange = (e) => setForm((f) => ({ ...f, tipo: e.target.value, metodo_id: "" }));
+  const tipoSel = tipos.find((t) => t.nombre === form.tipo);
+  const metodosDelTipo = tipoSel ? metodos.filter((m) => m.tipo_practica_id === tipoSel.id) : [];
 
   const submit = async () => {
     setSaving(true);
@@ -130,6 +139,7 @@ function PracticaModal({ open, onClose, onSave }) {
       await onSave({
         cultivo_id: form.cultivo_id,
         tipo: form.tipo,
+        metodo_id: form.metodo_id === "" ? null : Number(form.metodo_id),
         descripcion: form.descripcion,
         insumo_id: form.insumo_id === "" ? null : form.insumo_id,
         cantidad: form.cantidad === "" ? null : Number(form.cantidad),
@@ -172,7 +182,7 @@ function PracticaModal({ open, onClose, onSave }) {
             </Select>
           </Field>
           <Field label="Tipo de práctica">
-            <Select value={form.tipo} onChange={set("tipo")}>
+            <Select value={form.tipo} onChange={onTipoChange}>
               <option value="">Selecciona un tipo</option>
               {tipos.map((t) => (
                 <option key={t.id} value={t.nombre}>
@@ -182,6 +192,16 @@ function PracticaModal({ open, onClose, onSave }) {
             </Select>
           </Field>
         </div>
+        <Field label="¿Cómo lo hizo? (método)" hint={!form.tipo ? "Primero elige el tipo de práctica" : undefined}>
+          <Select value={form.metodo_id} onChange={set("metodo_id")} disabled={!form.tipo}>
+            <option value="">{form.tipo ? "Selecciona un método (opcional)" : "—"}</option>
+            {metodosDelTipo.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.nombre}
+              </option>
+            ))}
+          </Select>
+        </Field>
         <Field label="Insumo">
           <CatalogSelect
             catalogo="insumos"
@@ -212,7 +232,7 @@ function PracticaModal({ open, onClose, onSave }) {
         <Field label="Fecha">
           <Input type="date" value={form.fecha} onChange={set("fecha")} />
         </Field>
-        <Field label="Descripción">
+        <Field label="Descripción (opcional)">
           <Textarea
             value={form.descripcion}
             onChange={set("descripcion")}
@@ -269,6 +289,7 @@ function PracticasTab({ biohuertoId }) {
       ),
     },
     { key: "tipo", label: "Tipo", width: "1fr" },
+    { key: "metodo", label: "Método", width: "1fr", render: (r) => r.metodo || "—" },
     { key: "insumo", label: "Insumo", width: "1fr" },
     {
       key: "cantidad",
@@ -524,12 +545,24 @@ function CostosTab({ biohuertoId }) {
     {
       key: "descripcion",
       label: "Descripción",
-      width: "1.4fr",
+      width: "1.3fr",
       render: (r) => (
         <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-muted-1">
           {r.descripcion || "—"}
         </span>
       ),
+    },
+    {
+      key: "costo_unitario",
+      label: "Costo unit.",
+      width: ".8fr",
+      align: "right",
+      render: (r) =>
+        r.costo_unitario != null ? (
+          <span className="whitespace-nowrap text-muted-1">{fmtMoneda(r.costo_unitario, r.moneda)}</span>
+        ) : (
+          "—"
+        ),
     },
     {
       key: "monto",
@@ -849,11 +882,120 @@ function exportarProduccionExcel(rows) {
   XLSX.writeFile(wb, `registro-produccion-${localDateStr()}.xlsx`);
 }
 
+/* ============================ DEDICACIONES (HORAS) ============================ */
+
+function DedicacionesTab({ biohuertoId }) {
+  const toast = useToast();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [actividades, setActividades] = useState([]);
+  const [form, setForm] = useState({ actividad_id: "", fecha: "", horas: "", observacion: "" });
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const params = biohuertoId ? { biohuerto_id: biohuertoId } : {};
+      setRows(asList(await dedicacionesApi.list(params)));
+    } catch {
+      toast("No se pudieron cargar las dedicaciones", "danger");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    catalogosApi.list("actividades").then((d) => setActividades(asList(d))).catch(() => setActividades([]));
+  }, []);
+  useEffect(() => {
+    load();
+  }, [biohuertoId]);
+
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const submit = async () => {
+    if (!biohuertoId) {
+      toast("Elige un biohuerto específico para registrar horas", "danger");
+      return;
+    }
+    setSaving(true);
+    try {
+      await dedicacionesApi.crear({
+        biohuerto_id: biohuertoId,
+        actividad_id: Number(form.actividad_id),
+        fecha: form.fecha,
+        horas: Number(form.horas),
+        observacion: form.observacion || null,
+      });
+      toast("Horas registradas");
+      setForm({ actividad_id: "", fecha: "", horas: "", observacion: "" });
+      load();
+    } catch {
+      toast("No se pudieron registrar las horas", "danger");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const columns = [
+    { key: "fecha", label: "Fecha", width: ".9fr", render: (r) => fmtFecha(r.fecha) },
+    { key: "usuario", label: "Persona", width: "1.2fr", render: (r) => r.usuario || "—" },
+    { key: "actividad", label: "Actividad", width: "1fr" },
+    { key: "horas", label: "Horas", width: ".6fr", align: "right", render: (r) => Number(r.horas).toLocaleString("es-PE") },
+    { key: "observacion", label: "Observación", width: "1.3fr", render: (r) => r.observacion || "—" },
+  ];
+
+  return (
+    <div className="flex flex-col gap-5">
+      <Card pad="p-5">
+        <h3 className="m-0 mb-4 text-[17px] font-extrabold text-text">Registrar horas dedicadas</h3>
+        {!biohuertoId && (
+          <p className="mb-4 text-[13.5px] text-terracotta">
+            Selecciona un biohuerto específico arriba para poder registrar tus horas.
+          </p>
+        )}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+          <Field label="Actividad">
+            <Select value={form.actividad_id} onChange={set("actividad_id")}>
+              <option value="">Selecciona</option>
+              {actividades.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.nombre}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Fecha">
+            <Input type="date" value={form.fecha} onChange={set("fecha")} />
+          </Field>
+          <Field label="Horas">
+            <Input type="number" step="0.5" value={form.horas} onChange={set("horas")} placeholder="0" />
+          </Field>
+          <Field label="Observación (opcional)">
+            <Input value={form.observacion} onChange={set("observacion")} placeholder="Detalle…" />
+          </Field>
+        </div>
+        <div className="mt-4">
+          <Button
+            icon="clock"
+            onClick={submit}
+            disabled={saving || !biohuertoId || !form.actividad_id || !form.fecha || !form.horas}
+          >
+            {saving ? "Guardando…" : "Registrar horas"}
+          </Button>
+        </div>
+      </Card>
+      <DataTable columns={columns} rows={rows} loading={loading} empty={{ icon: "clock", title: "Sin horas registradas" }} />
+    </div>
+  );
+}
+
 /* ============================ PÁGINA ============================ */
 
 const TABS = [
   { id: "practicas", label: "Prácticas", icon: "recycle" },
   { id: "costos", label: "Costos", icon: "coins" },
+  { id: "dedicaciones", label: "Horas", icon: "clock" },
   { id: "produccion", label: "Producción", icon: "leaf" },
 ];
 
@@ -905,6 +1047,8 @@ export default function Trazabilidad() {
         <PracticasTab biohuertoId={biohuertoId} />
       ) : tab === "costos" ? (
         <CostosTab biohuertoId={biohuertoId} />
+      ) : tab === "dedicaciones" ? (
+        <DedicacionesTab biohuertoId={biohuertoId} />
       ) : (
         <ProduccionTab />
       )}

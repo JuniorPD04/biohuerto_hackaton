@@ -18,12 +18,12 @@ from app.routers import (
     auth,
     autoconsumos,
     biohuertos,
-    campanias,
     catalogos,
     cosechas,
     cuidados,
     cultivos,
     dashboard,
+    dedicaciones,
     entidades,
     diagnostico,
     incidencias,
@@ -31,6 +31,7 @@ from app.routers import (
     notifications,
     rag,
     recomendaciones,
+    reportes,
     trazabilidad,
     sync,
     users,
@@ -66,14 +67,15 @@ app.include_router(incidencias.router)
 app.include_router(cuidados.router)
 app.include_router(alertas.router)
 app.include_router(trazabilidad.router)
+app.include_router(dedicaciones.router)
 app.include_router(diagnostico.router)
 app.include_router(rag.router)
 app.include_router(recomendaciones.router)
+app.include_router(reportes.router)
 app.include_router(cosechas.router)
 app.include_router(autoconsumos.router)
 app.include_router(ventas.router)
 app.include_router(dashboard.router)
-app.include_router(campanias.router)
 app.include_router(catalogos.router)
 app.include_router(acceso.router)
 app.include_router(entidades.router)

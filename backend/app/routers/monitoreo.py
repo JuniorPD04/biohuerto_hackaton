@@ -50,21 +50,17 @@ async def create_monitoreo(
     await _ensure_cultivo_access(session, payload.cultivo_id, current_user)
     result = await session.execute(
         text(
-            f"""
-            with inserted as (
-              insert into monitoreo_registros (
-                cultivo_id, fuente_id, usuario_id, humedad_pct, temperatura_c,
-                luminosidad_lux, ph_suelo, observacion
-              )
-              values (
-                :cultivo_id, (select id from fuentes_monitoreo where codigo = 'manual'),
-                :usuario_id, :humedad_pct, :temperatura_c,
-                :luminosidad_lux, :ph_suelo, :observacion
-              )
-              returning id
+            """
+            insert into monitoreo_registros (
+              cultivo_id, fuente_id, usuario_id, humedad_pct, temperatura_c,
+              luminosidad_lux, ph_suelo, observacion
             )
-            {_MONITOREO_SELECT}
-            where m.id = (select id from inserted)
+            values (
+              :cultivo_id, (select id from fuentes_monitoreo where codigo = 'manual'),
+              :usuario_id, :humedad_pct, :temperatura_c,
+              :luminosidad_lux, :ph_suelo, :observacion
+            )
+            returning id
             """
         ),
         {
@@ -77,9 +73,13 @@ async def create_monitoreo(
             "observacion": payload.observacion,
         },
     )
-    row = result.mappings().one()
+    new_id = result.scalar_one()
     await session.commit()
-    return _to_monitoreo_out(row)
+    row = await session.execute(
+        text(_MONITOREO_SELECT + " where m.id = :id"),
+        {"id": new_id},
+    )
+    return _to_monitoreo_out(row.mappings().one())
 
 
 @router.get("", response_model=list[MonitoreoOut])

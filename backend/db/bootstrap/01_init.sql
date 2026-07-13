@@ -166,13 +166,26 @@ INSERT INTO tipos_practica(categoria_id, nombre) VALUES
   (3,'Rotación de cultivos'),(3,'Policultivo / Cultivos asociados'),
   (3,'Preparación de terreno'),(3,'Otro');
 
+-- 1.5b  Métodos de práctica (el "cómo" de cada tipo de práctica).
+--  Catálogo extensible colgado de tipos_practica: al elegir el tipo el
+--  formulario filtra sus métodos. El seed vive en la migración 008.
+CREATE TABLE metodos_practica (
+  id               SMALLSERIAL  PRIMARY KEY,
+  tipo_practica_id SMALLINT     NOT NULL REFERENCES tipos_practica(id) ON DELETE CASCADE,
+  nombre           VARCHAR(120) NOT NULL,
+  es_sistema       BOOLEAN      NOT NULL DEFAULT FALSE,
+  is_active        BOOLEAN      NOT NULL DEFAULT TRUE,
+  UNIQUE (tipo_practica_id, nombre)
+);
+
 -- 1.6  Categorías de costo
 CREATE TABLE categorias_costo (
   id     SMALLSERIAL PRIMARY KEY,
   nombre VARCHAR(80) NOT NULL UNIQUE
 );
 INSERT INTO categorias_costo(nombre) VALUES
-  ('Insumos'),('Agua'),('Mano de obra'),('Herramientas'),('Otros');
+  ('Insumos'),('Agua'),('Mano de obra'),('Herramientas'),('Otros'),
+  ('Semilla'),('Abono'),('Mejorador (vitamina)');
 
 -- 1.7  Tipos de alerta
 CREATE TABLE tipos_alerta (
@@ -224,7 +237,8 @@ INSERT INTO unidades(codigo, nombre, es_sistema) VALUES
   ('m2',     'Metro cuadrado', TRUE),
   ('planta', 'Planta',         TRUE),
   ('docena', 'Docena',         TRUE),
-  ('saco',   'Saco',           TRUE);
+  ('saco',   'Saco',           TRUE),
+  ('hora',   'Hora',           TRUE);
 
 -- 1.10  Insumos (catálogo extensible: "Agregar nuevo")
 CREATE TABLE insumos (
@@ -271,6 +285,51 @@ INSERT INTO tipos_area(codigo, nombre, es_sistema) VALUES
   ('hectarea',        'Hectárea',        TRUE),
   ('otro',            'Otro',            TRUE);
 
+-- 1.12b  Modalidad del biohuerto (comunitario / casero).
+--  Eje ORGANIZATIVO, distinto del tipo_area (físico). Comunitario = espacio
+--  público compartido en parcelas; casero = en el hogar.
+CREATE TABLE modalidades (
+  id         SMALLSERIAL PRIMARY KEY,
+  codigo     VARCHAR(20)  NOT NULL UNIQUE,
+  nombre     VARCHAR(60)  NOT NULL,
+  es_sistema BOOLEAN      NOT NULL DEFAULT FALSE
+);
+INSERT INTO modalidades(codigo, nombre, es_sistema) VALUES
+  ('comunitario', 'Comunitario', TRUE),
+  ('casero',      'Casero',      TRUE);
+
+-- 1.12b-2  Comunidades (P.J.) — catálogo extensible. La comunidad es un
+--  atributo de UBICACIÓN del biohuerto: una comunidad agrupa varios biohuertos.
+CREATE TABLE comunidades (
+  id            SMALLSERIAL  PRIMARY KEY,
+  codigo        VARCHAR(40)  NOT NULL UNIQUE,
+  nombre        VARCHAR(120) NOT NULL,
+  es_sistema    BOOLEAN      NOT NULL DEFAULT FALSE,
+  creado_por_id BIGINT       NULL,    -- FK diferida → usuarios (BLOQUE 2)
+  is_active     BOOLEAN      NOT NULL DEFAULT TRUE
+);
+INSERT INTO comunidades(codigo, nombre, es_sistema) VALUES
+  ('luis_alberto_sanchez', 'P.J. Luis Alberto Sánchez',       TRUE),
+  ('san_cristian',         'P.J. San Cristian',               TRUE),
+  ('santo_toribio',        'P.J. Santo Toribio de Mogrovejo',  TRUE),
+  ('santa_trinidad',       'P.J. Santa Trinidad',             TRUE),
+  ('virgen_fatima',        'P.J. Virgen de Fátima',           TRUE),
+  ('ejercito_salvacion',   'Ejército de Salvación',           TRUE);
+
+-- 1.12c  Actividades del biohuerto (catálogo) — tareas compartidas para la
+--  bitácora de dedicaciones (horas por persona): limpieza, riego, compostaje.
+CREATE TABLE actividades (
+  id         SMALLSERIAL PRIMARY KEY,
+  codigo     VARCHAR(20)  NOT NULL UNIQUE,
+  nombre     VARCHAR(60)  NOT NULL,
+  es_sistema BOOLEAN      NOT NULL DEFAULT FALSE,
+  is_active  BOOLEAN      NOT NULL DEFAULT TRUE
+);
+INSERT INTO actividades(codigo, nombre, es_sistema) VALUES
+  ('limpieza',   'Limpieza',   TRUE),
+  ('riego',      'Riego',      TRUE),
+  ('compostaje', 'Compostaje', TRUE);
+
 -- 1.13  Fuentes de monitoreo (catálogo) — normaliza el origen del registro
 CREATE TABLE fuentes_monitoreo (
   id     SMALLSERIAL PRIMARY KEY,
@@ -315,6 +374,8 @@ ALTER TABLE tipos_area   ADD CONSTRAINT fk_tipos_area_creador FOREIGN KEY (cread
 CREATE TABLE biohuertos (
   id             UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),  -- UUID: creable offline en campo
   tipo_area_id   SMALLINT      NOT NULL REFERENCES tipos_area(id),      -- biohuerto/parcela/… (por defecto 'biohuerto')
+  modalidad_id   SMALLINT      NULL REFERENCES modalidades(id),         -- comunitario / casero (organizativo)
+  comunidad_id   SMALLINT      NULL REFERENCES comunidades(id),         -- P.J. donde se ubica el biohuerto
   codigo         VARCHAR(20)   NOT NULL UNIQUE,
   abreviatura    VARCHAR(20)   NULL,
   nombre         VARCHAR(160)  NOT NULL,
@@ -635,6 +696,7 @@ CREATE TABLE practicas_agricolas (
   cultivo_id       UUID          NOT NULL REFERENCES cultivos(id)   ON DELETE CASCADE,
   usuario_id       BIGINT        NULL REFERENCES usuarios(id)       ON DELETE SET NULL,
   tipo_id          SMALLINT      NOT NULL REFERENCES tipos_practica(id),
+  metodo_id        SMALLINT      NULL REFERENCES metodos_practica(id),   -- el "cómo" de la práctica
   descripcion      TEXT          NOT NULL,
   insumo_id        SMALLINT      NULL REFERENCES insumos(id),
   cantidad         NUMERIC(10,2) NULL CHECK (cantidad IS NULL OR cantidad >= 0),
@@ -645,6 +707,24 @@ CREATE TABLE practicas_agricolas (
   created_at       TIMESTAMPTZ   NOT NULL DEFAULT now(),
   updated_at       TIMESTAMPTZ   NOT NULL DEFAULT now(),
   deleted_at       TIMESTAMPTZ   NULL
+);
+
+-- 8.2  Dedicaciones: bitácora de horas por persona, biohuerto y fecha.
+--  Sostiene las tareas compartidas del huerto comunitario. "Personas que
+--  participaron" = COUNT(DISTINCT usuario_id) por biohuerto.
+CREATE TABLE dedicaciones (
+  id           UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),  -- UUID: registrable offline
+  biohuerto_id UUID          NOT NULL REFERENCES biohuertos(id) ON DELETE CASCADE,
+  usuario_id   BIGINT        NOT NULL REFERENCES usuarios(id)   ON DELETE RESTRICT,
+  actividad_id SMALLINT      NOT NULL REFERENCES actividades(id),
+  fecha        DATE          NOT NULL,
+  horas        NUMERIC(5,2)  NOT NULL CHECK (horas > 0),
+  observacion  VARCHAR(200)  NULL,
+  last_synced_at TIMESTAMPTZ NULL,
+  is_synced    BOOLEAN       NOT NULL DEFAULT TRUE,
+  created_at   TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  deleted_at   TIMESTAMPTZ   NULL
 );
 
 -- ============================================================

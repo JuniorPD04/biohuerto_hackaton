@@ -421,6 +421,8 @@ function CosechasView() {
                       variant="danger"
                       size="sm"
                       icon="trash"
+                      full
+                      className="col-span-2"
                       onClick={() => eliminar(c)}
                     >
                       Eliminar

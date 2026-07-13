@@ -83,7 +83,12 @@ export function Button({
   disabled,
   className = "",
 }) {
-  const sz = size === "sm" ? "text-[13.5px] px-[14px] py-2" : "text-[15px] px-5 py-3";
+  const sz =
+    size === "sm"
+      ? "text-[13.5px] px-[14px] py-2"
+      : size === "lg"
+        ? "text-[17px] px-7 py-[14px]"
+        : "text-[15px] px-5 py-3";
   return (
     <button
       type={type}
@@ -92,7 +97,7 @@ export function Button({
       disabled={disabled}
       className={`inline-flex items-center justify-center gap-[9px] whitespace-nowrap rounded-xl border font-bold transition-all hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60 ${sz} ${BTN_VARIANTS[variant]} ${full ? "w-full" : ""} ${className}`}
     >
-      {icon && <Icon name={icon} size={size === "sm" ? 16 : 18} stroke={2.1} />}
+      {icon && <Icon name={icon} size={size === "sm" ? 16 : size === "lg" ? 20 : 18} stroke={2.1} />}
       {children}
     </button>
   );

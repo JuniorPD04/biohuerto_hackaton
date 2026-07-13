@@ -1172,8 +1172,8 @@ function SeccionPracticas({ cultivoId }) {
     setModal(true);
   };
   const save = () => {
-    if (!form.tipo.trim() || !form.descripcion.trim()) {
-      toast("Completa tipo y descripción", "danger");
+    if (!form.tipo.trim()) {
+      toast("Selecciona el tipo de práctica", "danger");
       return;
     }
     setSaving(true);
@@ -1291,7 +1291,7 @@ function SeccionPracticas({ cultivoId }) {
             <Input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} />
           </Field>
         </div>
-        <Field label="Descripción" className="mt-[14px]">
+        <Field label="Descripción (opcional)" className="mt-[14px]">
           <Textarea
             value={form.descripcion}
             onChange={(e) => setForm({ ...form, descripcion: e.target.value })}

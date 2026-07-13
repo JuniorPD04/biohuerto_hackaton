@@ -38,7 +38,6 @@ function ViewToggle({ view, onChange }) {
   const opts = [
     { id: "cards", icon: "grid", title: "Tarjetas" },
     { id: "list", icon: "list", title: "Lista" },
-    { id: "map", icon: "seedling", title: "Mapa" },
   ];
   return (
     <div
@@ -584,6 +583,8 @@ const EMPTY_FORM = {
   ubicacion_referencia: "",
   area_m2: "",
   tipo_area_id: "",
+  modalidad_id: "",
+  comunidad_id: "",
   estado: "nuevo",
   grid_filas: 4,
   grid_columnas: 4,
@@ -592,6 +593,7 @@ const EMPTY_FORM = {
   longitud: "",
   descripcion: "",
   imagen: "",
+  productores_iniciales: [],
 };
 
 // Encabezado de paso numerado para guiar el registro.
@@ -607,7 +609,7 @@ function Step({ n, title, hint }) {
   );
 }
 
-function AsignacionProductores({ biohuerto }) {
+function AsignacionProductores({ biohuerto, readOnly = false }) {
   const toast = useToast();
   const [productores, setProductores] = useState([]);
   const [asignados, setAsignados] = useState([]);
@@ -690,14 +692,16 @@ function AsignacionProductores({ biohuerto }) {
             Productores asignados
           </div>
           <div className="mt-[3px] text-sm font-semibold text-muted-1">
-            Controla que productores pueden ver y sembrar este biohuerto.
+            {readOnly
+              ? "Productores que pueden ver y sembrar este biohuerto."
+              : "Controla que productores pueden ver y sembrar este biohuerto."}
           </div>
         </div>
         {loading && <span className="text-xs font-bold text-muted-2">Cargando…</span>}
       </div>
 
-      {/* Lista con checkboxes para asignar varios a la vez */}
-      {disponibles.length > 0 && (
+      {/* Lista con checkboxes para asignar varios a la vez (solo en edición) */}
+      {!readOnly && disponibles.length > 0 && (
         <div className="mb-4">
           <div className="mb-[6px] flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-[.05em] text-muted-2">
@@ -767,7 +771,9 @@ function AsignacionProductores({ biohuerto }) {
                 <div className="truncate text-sm font-extrabold text-text">{p.nombre}</div>
                 <div className="truncate text-xs font-semibold text-muted-2">{p.email}</div>
               </div>
-              <IconBtn name="x" title="Quitar asignacion" disabled={saving} onClick={() => quitar(p)} />
+              {!readOnly && (
+                <IconBtn name="x" title="Quitar asignacion" disabled={saving} onClick={() => quitar(p)} />
+              )}
             </div>
           ))}
         </div>
@@ -781,11 +787,18 @@ function BiohuertoModal({ open, mode, row, onClose, onSave, canManageOwners, cul
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [tiposArea, setTiposArea] = useState([]);
+  const [modalidades, setModalidades] = useState([]);
+  const [comunidades, setComunidades] = useState([]);
   const [nuevoTipo, setNuevoTipo] = useState(false);
   const [nuevoTipoNombre, setNuevoTipoNombre] = useState("");
   const [creandoTipo, setCreandoTipo] = useState(false);
   // ¿el usuario editó código/abreviatura a mano? (para no pisar sus cambios)
   const [touched, setTouched] = useState({ codigo: false, abreviatura: false });
+  // Asistente por pasos (solo al registrar): 1 nombre · 2 ubicación · 3 tipo · 4 tamaño · 5 productores
+  const [paso, setPaso] = useState(1);
+  // El paso de asignar productores solo aplica a quien puede gestionarlos (admin).
+  const TOTAL_PASOS = canManageOwners ? 5 : 4;
+  const [productoresList, setProductoresList] = useState([]);
 
   // Cargar catálogo de tipos de área al abrir el formulario.
   useEffect(() => {
@@ -793,9 +806,17 @@ function BiohuertoModal({ open, mode, row, onClose, onSave, canManageOwners, cul
     let cancel = false;
     (async () => {
       try {
-        const data = await catalogosApi.list("tipos-area");
+        const [data, mods, coms] = await Promise.all([
+          catalogosApi.list("tipos-area"),
+          catalogosApi.list("modalidades"),
+          catalogosApi.list("comunidades"),
+        ]);
         const items = Array.isArray(data) ? data : data?.items || [];
-        if (!cancel) setTiposArea(items);
+        if (!cancel) {
+          setTiposArea(items);
+          setModalidades(Array.isArray(mods) ? mods : mods?.items || []);
+          setComunidades(Array.isArray(coms) ? coms : coms?.items || []);
+        }
       } catch {
         if (!cancel) setTiposArea([]);
       }
@@ -805,10 +826,26 @@ function BiohuertoModal({ open, mode, row, onClose, onSave, canManageOwners, cul
     };
   }, [open, mode]);
 
+  // Lista de productores para el paso de asignación (solo al registrar).
+  useEffect(() => {
+    if (!open || mode !== "new" || !canManageOwners) return;
+    let cancel = false;
+    usuariosApi
+      .list({ rol: "productor", is_active: true })
+      .then((d) => {
+        if (!cancel) setProductoresList(Array.isArray(d) ? d : d?.items || []);
+      })
+      .catch(() => {});
+    return () => {
+      cancel = true;
+    };
+  }, [open, mode, canManageOwners]);
+
   useEffect(() => {
     if (!open) return;
     setNuevoTipo(false);
     setNuevoTipoNombre("");
+    setPaso(1);
     // Al crear, el código/abreviatura arrancan en "auto"; al editar, se respetan los existentes.
     setTouched({ codigo: mode === "edit", abreviatura: mode === "edit" });
     if (mode === "edit" && row) {
@@ -819,6 +856,8 @@ function BiohuertoModal({ open, mode, row, onClose, onSave, canManageOwners, cul
         ubicacion_referencia: row.ubicacion_referencia || "",
         area_m2: row.area_m2 ?? "",
         tipo_area_id: row.tipo_area_id ?? "",
+        modalidad_id: row.modalidad_id ?? "",
+        comunidad_id: row.comunidad_id ?? "",
         estado: row.estado || "nuevo",
         grid_filas: row.grid_filas || 4,
         grid_columnas: row.grid_columnas || 4,
@@ -928,6 +967,10 @@ function BiohuertoModal({ open, mode, row, onClose, onSave, canManageOwners, cul
         area_m2: form.area_m2 === "" ? null : Number(form.area_m2),
         tipo_area_id:
           form.tipo_area_id === "" ? null : Number(form.tipo_area_id),
+        modalidad_id:
+          form.modalidad_id === "" ? null : Number(form.modalidad_id),
+        comunidad_id:
+          form.comunidad_id === "" ? null : Number(form.comunidad_id),
         estado: form.estado,
         grid_filas: Number(form.grid_filas) || 4,
         grid_columnas: Number(form.grid_columnas) || 4,
@@ -939,6 +982,10 @@ function BiohuertoModal({ open, mode, row, onClose, onSave, canManageOwners, cul
       // Solo enviar la imagen si cambió respecto a la guardada (null la elimina).
       if ((form.imagen || "") !== (row?.imagen || "")) {
         body.imagen = form.imagen || null;
+      }
+      // Al registrar: productores a asignar tras crear el biohuerto (campo interno).
+      if (mode === "new" && form.productores_iniciales.length > 0) {
+        body._productores = form.productores_iniciales;
       }
       await onSave(body, mode, row?.id);
     } finally {
@@ -952,7 +999,7 @@ function BiohuertoModal({ open, mode, row, onClose, onSave, canManageOwners, cul
     <Modal
       open={open}
       onClose={onClose}
-      width={mode === "view" ? 640 : 920}
+      width={mode === "view" ? 640 : mode === "new" ? 680 : 1240}
       title={
         view
           ? row?.nombre
@@ -966,13 +1013,32 @@ function BiohuertoModal({ open, mode, row, onClose, onSave, canManageOwners, cul
           : "Datos de la unidad productiva comunitaria"
       }
       footer={
-        view ? null : (
+        view ? null : mode === "new" ? (
+          <div className="flex w-full items-center justify-between gap-3">
+            <Button variant="ghost" size="lg" onClick={paso === 1 ? onClose : () => setPaso((p) => p - 1)}>
+              {paso === 1 ? "Cancelar" : "← Atrás"}
+            </Button>
+            {paso < TOTAL_PASOS ? (
+              <Button
+                size="lg"
+                onClick={() => setPaso((p) => Math.min(TOTAL_PASOS, p + 1))}
+                disabled={paso === 1 && (!form.nombre || form.nombre.trim().length < 2)}
+              >
+                Siguiente →
+              </Button>
+            ) : (
+              <Button size="lg" onClick={submit} disabled={saving}>
+                {saving ? "Guardando…" : "Registrar huerto"}
+              </Button>
+            )}
+          </div>
+        ) : (
           <>
             <Button variant="ghost" onClick={onClose}>
               Cancelar
             </Button>
             <Button onClick={submit} disabled={saving}>
-              {saving ? "Guardando…" : mode === "edit" ? "Guardar cambios" : "Registrar ficha"}
+              {saving ? "Guardando…" : "Guardar cambios"}
             </Button>
           </>
         )
@@ -992,7 +1058,8 @@ function BiohuertoModal({ open, mode, row, onClose, onSave, canManageOwners, cul
             <Stat label="Ubicación de referencia" value={row?.ubicacion_referencia || "Sin ubicación"} />
             <Stat label="Área disponible" value={`${row?.area_m2} m²`} />
             <Stat label="Cultivos activos" value={row?.cultivos_count ?? 0} />
-            <Stat label="Tipo de área" value={row?.tipo_area || "Sin tipo"} />
+            <Stat label="Modalidad" value={row?.modalidad || "Sin modalidad"} />
+            <Stat label="Comunidad" value={row?.comunidad || "Sin comunidad"} />
             <Stat label="Estado" value={estadoLabel(row?.estado)} />
             <Stat label="Mapa de siembra" value={`${row?.grid_filas || 4} x ${row?.grid_columnas || 4}`} />
             <Stat
@@ -1012,7 +1079,172 @@ function BiohuertoModal({ open, mode, row, onClose, onSave, canManageOwners, cul
               {row?.descripcion || "Sin descripción"}
             </div>
           </div>
-          {canManageOwners && <AsignacionProductores biohuerto={row} />}
+          {canManageOwners && <AsignacionProductores biohuerto={row} readOnly />}
+        </div>
+      ) : mode === "new" ? (
+        <div className="mx-auto max-w-[620px] py-1">
+          {/* Barra de progreso */}
+          <div className="mb-7 flex items-center gap-3">
+            <span className="whitespace-nowrap text-[14px] font-extrabold text-muted-2">
+              Paso {paso} de {TOTAL_PASOS}
+            </span>
+            <div className="flex flex-1 gap-[6px]">
+              {Array.from({ length: TOTAL_PASOS }, (_, k) => k + 1).map((n) => (
+                <span
+                  key={n}
+                  className="h-[7px] flex-1 rounded-full transition-colors"
+                  style={{ background: n <= paso ? "var(--primary)" : "var(--line-2)" }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {paso === 1 && (
+            <div className="flex flex-col gap-5">
+              <div>
+                <h2 className="m-0 text-[24px] font-extrabold text-text">¿Cómo se llama el huerto?</h2>
+                <p className="mt-1 text-[15px] text-muted-2">Ponle un nombre fácil de reconocer.</p>
+              </div>
+              <Input value={form.nombre} onChange={onNombre} placeholder="Huerto Luis Alberto Sánchez" />
+              <div>
+                <div className="mb-2 text-[14.5px] font-bold text-text">Foto del huerto (opcional)</div>
+                <ImageUpload key="wiz-new" defaultUrl="" height={160} onChange={(url) => setForm((f) => ({ ...f, imagen: url }))} />
+              </div>
+            </div>
+          )}
+
+          {paso === 2 && (
+            <div className="flex flex-col gap-5">
+              <div>
+                <h2 className="m-0 text-[24px] font-extrabold text-text">¿Dónde está el huerto?</h2>
+                <p className="mt-1 text-[15px] text-muted-2">Elige la comunidad y la dirección.</p>
+              </div>
+              <Field label="Comunidad (P.J.)">
+                <Select value={form.comunidad_id} onChange={set("comunidad_id")}>
+                  <option value="">Sin comunidad</option>
+                  {comunidades.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                  ))}
+                </Select>
+              </Field>
+              <div className="min-h-[340px]">
+                <AddressPicker
+                  label="Dirección"
+                  value={form.ubicacion_referencia}
+                  areaM2={form.area_m2}
+                  initialCenter={null}
+                  onChange={(direccion, coords) =>
+                    setForm((f) => ({
+                      ...f,
+                      ubicacion_referencia: direccion,
+                      latitud: coords ? coords.lat : "",
+                      longitud: coords ? coords.lng : "",
+                    }))
+                  }
+                />
+              </div>
+            </div>
+          )}
+
+          {paso === 3 && (
+            <div className="flex flex-col gap-5">
+              <div>
+                <h2 className="m-0 text-[24px] font-extrabold text-text">¿Qué tipo de huerto es?</h2>
+                <p className="mt-1 text-[15px] text-muted-2">Toca una opción.</p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {modalidades.map((m) => {
+                  const activo = Number(form.modalidad_id) === Number(m.id);
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, modalidad_id: m.id }))}
+                      className={`rounded-2xl border-2 p-5 text-left transition-all ${
+                        activo ? "border-primary bg-primary/10" : "border-line hover:border-primary/40"
+                      }`}
+                    >
+                      <span className="text-primary">
+                        <Icon name={m.codigo === "comunitario" ? "users" : "sprout"} size={30} />
+                      </span>
+                      <div className="mt-2 text-[17px] font-extrabold text-text">{m.nombre}</div>
+                      <div className="text-[13.5px] text-muted-2">
+                        {m.codigo === "comunitario" ? "Espacio compartido en parcelas" : "En el hogar, macetas"}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {paso === 4 && (
+            <div className="flex flex-col gap-5">
+              <div>
+                <h2 className="m-0 text-[24px] font-extrabold text-text">¿De qué tamaño es?</h2>
+                <p className="mt-1 text-[15px] text-muted-2">Solo el área. Lo demás se completa solo.</p>
+              </div>
+              <Field label="Área disponible (m²)">
+                <Input type="number" value={form.area_m2} onChange={set("area_m2")} placeholder="Ej: 50" />
+              </Field>
+              <div className="rounded-xl bg-accent-50 px-4 py-3 text-[13.5px] font-semibold text-primary">
+                El código y la abreviatura se generan automáticamente.
+              </div>
+            </div>
+          )}
+
+          {paso === 5 && (
+            <div className="flex flex-col gap-5">
+              <div>
+                <h2 className="m-0 text-[24px] font-extrabold text-text">¿Quién lo cuida?</h2>
+                <p className="mt-1 text-[15px] text-muted-2">
+                  Asigna productores ahora, o hazlo después editando el biohuerto.
+                </p>
+              </div>
+              <div className="max-h-[320px] overflow-y-auto rounded-2xl border border-line">
+                {productoresList.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-[14px] font-semibold text-muted-2">
+                    No hay productores para asignar.
+                  </div>
+                ) : (
+                  productoresList.map((p, i) => {
+                    const sel = form.productores_iniciales.includes(p.id);
+                    return (
+                      <label
+                        key={p.id}
+                        className={`flex cursor-pointer items-center gap-3 px-4 py-[13px] hover:bg-chip ${
+                          i < productoresList.length - 1 ? "border-b border-line" : ""
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={sel}
+                          onChange={() =>
+                            setForm((f) => ({
+                              ...f,
+                              productores_iniciales: sel
+                                ? f.productores_iniciales.filter((x) => x !== p.id)
+                                : [...f.productores_iniciales, p.id],
+                            }))
+                          }
+                          className="h-5 w-5 rounded accent-primary"
+                        />
+                        <div className="min-w-0">
+                          <div className="truncate text-[15px] font-extrabold text-text">{p.nombre}</div>
+                          <div className="truncate text-[13px] font-semibold text-muted-2">{p.email}</div>
+                        </div>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              <div className="rounded-xl bg-chip px-4 py-3 text-[13.5px] font-semibold text-muted-1">
+                {form.productores_iniciales.length > 0
+                  ? `${form.productores_iniciales.length} productor(es) seleccionado(s).`
+                  : "Puedes dejarlo vacío y asignarlos más tarde."}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid gap-7 lg:grid-cols-[1fr_1.05fr]">
@@ -1031,47 +1263,15 @@ function BiohuertoModal({ open, mode, row, onClose, onSave, canManageOwners, cul
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Tipo de área">
-                {nuevoTipo ? (
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={nuevoTipoNombre}
-                      onChange={(e) => setNuevoTipoNombre(e.target.value)}
-                      placeholder="Nombre del tipo"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          crearTipoArea();
-                        }
-                      }}
-                    />
-                    <Button size="sm" onClick={crearTipoArea} disabled={creandoTipo || !nuevoTipoNombre.trim()}>
-                      {creandoTipo ? "…" : "Guardar"}
-                    </Button>
-                    <IconBtn
-                      name="x"
-                      title="Cancelar"
-                      onClick={() => {
-                        setNuevoTipo(false);
-                        setNuevoTipoNombre("");
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Select value={form.tipo_area_id} onChange={set("tipo_area_id")} className="flex-1">
-                      <option value="">Selecciona un tipo</option>
-                      {tiposArea.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.nombre}
-                        </option>
-                      ))}
-                    </Select>
-                    <Button variant="secondary" size="sm" icon="plus" onClick={() => setNuevoTipo(true)}>
-                      Nuevo
-                    </Button>
-                  </div>
-                )}
+              <Field label="Modalidad" hint="Comunitario (parcelas compartidas) o casero (en el hogar)">
+                <Select value={form.modalidad_id} onChange={set("modalidad_id")}>
+                  <option value="">Selecciona modalidad</option>
+                  {modalidades.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.nombre}
+                    </option>
+                  ))}
+                </Select>
               </Field>
               <Field label="Estado">
                 <Select value={form.estado} onChange={set("estado")}>
@@ -1083,6 +1283,16 @@ function BiohuertoModal({ open, mode, row, onClose, onSave, canManageOwners, cul
                 </Select>
               </Field>
             </div>
+            <Field label="Comunidad (P.J.)" hint="Comunidad donde se ubica el biohuerto">
+              <Select value={form.comunidad_id} onChange={set("comunidad_id")}>
+                <option value="">Sin comunidad</option>
+                {comunidades.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nombre}
+                  </option>
+                ))}
+              </Select>
+            </Field>
             <Field label="Foto del biohuerto (opcional)">
               <ImageUpload
                 key={row?.id || "new"}
@@ -1162,37 +1372,15 @@ function BiohuertoModal({ open, mode, row, onClose, onSave, canManageOwners, cul
             </Field>
           </div>
 
-          {/* Distribución del biohuerto (a todo el ancho) */}
-          <div className="lg:col-span-2">
-            <Step n="4" title="Distribución del biohuerto" hint="filas × columnas de siembra" />
-            <div className="mt-[14px] grid grid-cols-2 gap-4">
-              <Field label="Filas del mapa">
-                <div className="flex gap-2">
-                  <IconBtn name="minus" title="Quitar fila" onClick={() => stepGrid("grid_filas", -1)} />
-                  <Input type="number" min="1" max="30" value={form.grid_filas} onChange={set("grid_filas")} placeholder="4" />
-                  <IconBtn name="plus" title="Agregar fila" onClick={() => stepGrid("grid_filas", 1)} />
-                </div>
-              </Field>
-              <Field label="Columnas del mapa">
-                <div className="flex gap-2">
-                  <IconBtn name="minus" title="Quitar columna" onClick={() => stepGrid("grid_columnas", -1)} />
-                  <Input type="number" min="1" max="30" value={form.grid_columnas} onChange={set("grid_columnas")} placeholder="4" />
-                  <IconBtn name="plus" title="Agregar columna" onClick={() => stepGrid("grid_columnas", 1)} />
-                </div>
-              </Field>
+          {/* Asignación de productores (a todo el ancho, solo al editar un biohuerto existente) */}
+          {mode === "edit" && canManageOwners && (
+            <div className="lg:col-span-2">
+              <Step n="4" title="Productores con acceso" hint="asigna quién puede ver y sembrar" />
+              <div className="mt-[14px]">
+                <AsignacionProductores biohuerto={row} />
+              </div>
             </div>
-            <div className="mt-[14px]">
-              <Field label="Vista previa de la distribución">
-                <BiohuertoGrid
-                  biohuerto={{ grid_filas: form.grid_filas, grid_columnas: form.grid_columnas }}
-                  cultivos={[]}
-                  selected={[]}
-                  readonly
-                  compact
-                />
-              </Field>
-            </div>
-          </div>
+          )}
         </div>
       )}
     </Modal>
@@ -1210,7 +1398,10 @@ export default function Biohuertos() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [ubic, setUbic] = useState("");
-  const [view, setView] = useState(() => localStorage.getItem("bh-bioview") || "cards");
+  const [view, setView] = useState(() => {
+    const v = localStorage.getItem("bh-bioview");
+    return v === "cards" || v === "list" ? v : "cards";
+  });
   const [modal, setModal] = useState(null); // { mode, row }
   const [siembraModal, setSiembraModal] = useState(null); // { biohuerto, celdas }
   const [cultivoDetalle, setCultivoDetalle] = useState(null);
@@ -1266,12 +1457,26 @@ export default function Biohuertos() {
       if (mode === "edit") {
         await biohuertosApi.update(id, body);
         toast("Biohuerto actualizado");
+        setModal(null);
+        await load();
       } else {
-        await biohuertosApi.create(body);
+        const { _productores, ...createBody } = body;
+        const creado = await biohuertosApi.create(createBody);
+        // Asignar los productores elegidos en el asistente (si los hubo).
+        if (creado?.id && Array.isArray(_productores) && _productores.length) {
+          await Promise.all(
+            _productores.map((pid) =>
+              biohuertosApi
+                .assignPropietario(creado.id, { propietario_id: Number(pid), rol: "propietario" })
+                .catch(() => null)
+            )
+          );
+        }
         toast("Biohuerto creado");
+        // Volver a la lista completa de biohuertos.
+        setModal(null);
+        await load();
       }
-      setModal(null);
-      await load();
     } catch {
       toast(
         mode === "edit"
