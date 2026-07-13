@@ -26,6 +26,13 @@ def _load_env_file(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip("'").strip('"'))
 
 
+def _ssl_enabled() -> bool:
+    raw = os.environ.get("DATABASE_SSL")
+    if raw is not None:
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    return os.environ.get("ENVIRONMENT", "development") == "production"
+
+
 async def apply_migrations() -> None:
     _load_env_file(ROOT_DIR / ".env")
     _load_env_file(BACKEND_DIR / ".env")
@@ -35,12 +42,15 @@ async def apply_migrations() -> None:
         raise RuntimeError("DATABASE_URL y MIGRATION_DB_PASSWORD son obligatorios para migrar")
 
     url = make_url(database_url)
+    migration_user = os.environ.get("MIGRATION_DB_USER", "migration_user")
+    ssl = "require" if _ssl_enabled() else None
     connection = await asyncpg.connect(
         host=url.host or "127.0.0.1",
         port=url.port or 5432,
-        user="migration_user",
+        user=migration_user,
         password=password,
         database=url.database,
+        ssl=ssl,
     )
     try:
         for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
@@ -63,6 +73,7 @@ async def apply_migrations() -> None:
             user=url.username or "app_bio_user",
             password=url.password,
             database=url.database,
+            ssl=ssl,
         )
         try:
             await app_connection.fetchval("select count(*) from notification_deliveries")

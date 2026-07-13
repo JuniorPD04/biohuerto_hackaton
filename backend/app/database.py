@@ -8,10 +8,11 @@ from app.config import get_settings
 settings = get_settings()
 
 engine = create_async_engine(
-    settings.database_url,
+    settings.sqlalchemy_database_url,
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
+    connect_args={"ssl": True} if settings.use_database_ssl else {},
 )
 
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)

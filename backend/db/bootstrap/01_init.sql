@@ -13,15 +13,15 @@ CREATE EXTENSION IF NOT EXISTS vector;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'migration_user') THEN
-    CREATE ROLE migration_user LOGIN PASSWORD 'change-me-migration-password';
+    CREATE ROLE migration_user LOGIN PASSWORD 'change-me-migration-biohuerto-password';
   ELSE
-    ALTER ROLE migration_user WITH LOGIN PASSWORD 'change-me-migration-password';
+    ALTER ROLE migration_user WITH LOGIN PASSWORD 'change-me-migration-biohuerto-password';
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_bio_user') THEN
-    CREATE ROLE app_bio_user LOGIN PASSWORD 'change-me-app-password';
+    CREATE ROLE app_bio_user LOGIN PASSWORD 'change-me-app-biohuerto-password';
   ELSE
-    ALTER ROLE app_bio_user WITH LOGIN PASSWORD 'change-me-app-password';
+    ALTER ROLE app_bio_user WITH LOGIN PASSWORD 'change-me-app-biohuerto-password';
   END IF;
 END
 $$;
