@@ -42,6 +42,15 @@ export function tintGradient(key) {
   return `linear-gradient(135deg, ${a} 0%, ${b} 100%)`;
 }
 
+// Fecha local (yyyy-mm-dd) sin desfase de timezone, a diferencia de
+// toISOString() que convierte a UTC antes de recortar.
+export function localDateStr(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function fmtFecha(iso) {
   if (!iso) return "—";
   const [y, m, d] = iso.split("T")[0].split(" ")[0].split("-");

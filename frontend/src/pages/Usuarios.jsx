@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   Card,
   PageHeader,
@@ -16,6 +16,7 @@ import {
   EmptyState,
   Icon,
 } from "../components/ui/primitives.jsx";
+import AddressPicker from "../components/ui/AddressPicker.jsx";
 import { useToast } from "../components/ui/Toast.jsx";
 import {
   useConfirm,
@@ -108,6 +109,23 @@ export default function Usuarios() {
     }
   };
 
+  const habilitarProductor = async (u) => {
+    const ok = await confirm({
+      tone: "primary",
+      question: `Habilitar a ${u.nombre} como productor?`,
+      message: "Este usuario dejara de ser cliente y podra acceder a las vistas de productor segun permisos.",
+      confirmLabel: "Habilitar",
+    });
+    if (!ok) return;
+    try {
+      await usuariosApi.update(u.id, { rol: "productor" });
+      toast("Usuario habilitado como productor");
+      load();
+    } catch (err) {
+      toast(err?.response?.data?.detail || "No se pudo habilitar al productor", "danger");
+    }
+  };
+
   // Reiniciar filtros al cambiar de pestaña.
   useEffect(() => { setQ(""); setEstadoF(""); }, [tab]);
 
@@ -172,6 +190,14 @@ export default function Usuarios() {
                 <Cell align="right">
                   <div style={{ display: "flex", gap: 8, marginLeft: "auto", alignItems: "center" }}>
                     <IconBtn name="eye" title="Ver detalle" onClick={() => setView(u)} />
+                    {u.rol === "consumidor" && (
+                      <IconBtn
+                        name="shieldCheck"
+                        title="Habilitar como productor"
+                        tone="primary"
+                        onClick={() => habilitarProductor(u)}
+                      />
+                    )}
                     <IconBtn name="edit" title={dim ? "Reactiva al usuario para editarlo" : "Editar"} tone="primary" disabled={dim} onClick={() => setEditing(u)} />
                     <Toggle on={u.is_active} title={u.is_active ? "Dar de baja" : "Reactivar"} onClick={() => toggleActivo(u)} />
                     <IconBtn name="trash" title="Eliminar" tone="danger" onClick={() => eliminar(u)} />
@@ -218,7 +244,9 @@ export default function Usuarios() {
 }
 
 function UsuarioModal({ user, role, onClose }) {
+  const navigate = useNavigate();
   if (!user) return null;
+  const esProductor = user.rol === "productor";
   return (
     <Modal
       open={!!user}
@@ -226,6 +254,20 @@ function UsuarioModal({ user, role, onClose }) {
       title={user.nombre}
       subtitle={`#${user.id} · ${ROL_LABEL[user.rol] || role}`}
       width={580}
+      footer={
+        esProductor ? (
+          <Button
+            variant="secondary"
+            icon="activity"
+            onClick={() => {
+              onClose();
+              navigate(`/monitoreo?productor=${user.id}`);
+            }}
+          >
+            Ver monitoreo de este productor
+          </Button>
+        ) : undefined
+      }
     >
       <div style={{ display: "grid", gap: 22 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "18px 20px", background: "#fff", border: "1px solid var(--line)", borderRadius: 16 }}>
@@ -243,6 +285,7 @@ function UsuarioModal({ user, role, onClose }) {
           <DetailRow icon="bell" label="Correo electrónico" value={user.email} />
           <DetailRow icon="activity" label="Teléfono" value={user.telefono} mono />
           <DetailRow icon="pin" label="Dirección" value={user.direccion} full />
+          {esProductor && <DetailRow icon="globe" label="Zona" value={user.zona} />}
           <DetailRow icon="calendar" label="Fecha de registro" value={fmtFecha(user.created_at)} mono />
           <DetailRow icon="clock" label="Última actualización" value={fmtFecha(user.updated_at)} mono />
         </div>
@@ -251,9 +294,16 @@ function UsuarioModal({ user, role, onClose }) {
   );
 }
 
+// Teléfono móvil de Perú: solo dígitos, empieza en 9, máximo 9.
+const sanitizePhone = (v) => {
+  let d = (v || "").replace(/\D/g, "");
+  if (d && d[0] !== "9") d = "";
+  return d.slice(0, 9);
+};
+
 function RegistrarUsuarioModal({ open, rol, onClose, onCreated }) {
   const toast = useToast();
-  const [form, setForm] = useState({ nombre: "", email: "", password: "", telefono: "", direccion: "" });
+  const [form, setForm] = useState({ nombre: "", email: "", password: "", telefono: "", direccion: "", latitud: null, longitud: null });
   const [saving, setSaving] = useState(false);
   const rolLabel = rol === "consumidor" ? "consumidor" : "productor";
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -272,9 +322,11 @@ function RegistrarUsuarioModal({ open, rol, onClose, onCreated }) {
         rol,
         telefono: form.telefono || null,
         direccion: form.direccion || null,
+        latitud: form.latitud,
+        longitud: form.longitud,
       });
       toast(`${rolLabel === "consumidor" ? "Consumidor" : "Productor"} registrado`);
-      setForm({ nombre: "", email: "", password: "", telefono: "", direccion: "" });
+      setForm({ nombre: "", email: "", password: "", telefono: "", direccion: "", latitud: null, longitud: null });
       onCreated();
     } catch (err) {
       toast(err?.response?.data?.detail || "No se pudo registrar el usuario", "danger");
@@ -289,7 +341,7 @@ function RegistrarUsuarioModal({ open, rol, onClose, onCreated }) {
       onClose={onClose}
       title={`Registrar ${rolLabel}`}
       subtitle="Crea una nueva cuenta y sus datos de contacto."
-      width={560}
+      width={620}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -313,14 +365,27 @@ function RegistrarUsuarioModal({ open, rol, onClose, onCreated }) {
             <Input type="password" value={form.password} onChange={set("password")} placeholder="••••••••" />
           </Field>
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Teléfono (opcional)">
-            <Input value={form.telefono} onChange={set("telefono")} placeholder="+51 987 654 321" />
-          </Field>
-          <Field label="Dirección (opcional)">
-            <Input value={form.direccion} onChange={set("direccion")} placeholder="Av. Siempre Viva 123" />
-          </Field>
-        </div>
+        <Field label="Teléfono (opcional)" hint="9 dígitos, empieza en 9">
+          <Input
+            value={form.telefono}
+            onChange={(e) => setForm((f) => ({ ...f, telefono: sanitizePhone(e.target.value) }))}
+            inputMode="numeric"
+            maxLength={9}
+            placeholder="987 654 321"
+          />
+        </Field>
+        <AddressPicker
+          label="Dirección (opcional)"
+          value={form.direccion}
+          onChange={(direccion, coords) =>
+            setForm((f) => ({
+              ...f,
+              direccion,
+              latitud: coords ? coords.lat : null,
+              longitud: coords ? coords.lng : null,
+            }))
+          }
+        />
       </div>
     </Modal>
   );
@@ -328,17 +393,23 @@ function RegistrarUsuarioModal({ open, rol, onClose, onCreated }) {
 
 function EditarUsuarioModal({ user, onClose, onSaved }) {
   const toast = useToast();
-  const [form, setForm] = useState({ nombre: "", telefono: "", direccion: "" });
+  const [form, setForm] = useState({ nombre: "", telefono: "", direccion: "", zona: "" });
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   useEffect(() => {
     if (user) {
-      setForm({ nombre: user.nombre || "", telefono: user.telefono || "", direccion: user.direccion || "" });
+      setForm({
+        nombre: user.nombre || "",
+        telefono: sanitizePhone(user.telefono),
+        direccion: user.direccion || "",
+        zona: user.zona || "",
+      });
     }
   }, [user]);
 
   if (!user) return null;
+  const esProductor = user.rol === "productor";
 
   const submit = async () => {
     if (!form.nombre.trim()) {
@@ -351,6 +422,7 @@ function EditarUsuarioModal({ user, onClose, onSaved }) {
         nombre: form.nombre,
         telefono: form.telefono || null,
         direccion: form.direccion || null,
+        ...(esProductor ? { zona: form.zona || null } : {}),
       });
       toast("Usuario actualizado");
       onSaved();
@@ -387,13 +459,24 @@ function EditarUsuarioModal({ user, onClose, onSaved }) {
           <Input value={user.email} disabled className="!bg-chip !text-muted-2" />
         </Field>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Teléfono">
-            <Input value={form.telefono} onChange={set("telefono")} placeholder="+51 987 654 321" />
+          <Field label="Teléfono" hint="9 dígitos, empieza en 9">
+            <Input
+              value={form.telefono}
+              onChange={(e) => setForm((f) => ({ ...f, telefono: sanitizePhone(e.target.value) }))}
+              inputMode="numeric"
+              maxLength={9}
+              placeholder="987 654 321"
+            />
           </Field>
           <Field label="Dirección">
             <Input value={form.direccion} onChange={set("direccion")} placeholder="Av. Siempre Viva 123" />
           </Field>
         </div>
+        {esProductor && (
+          <Field label="Zona" hint="Sector o zona del productor, ej. &quot;Zona P.J. San Martín&quot;.">
+            <Input value={form.zona} onChange={set("zona")} placeholder="Ej: Zona P.J. San Martín" />
+          </Field>
+        )}
       </div>
     </Modal>
   );

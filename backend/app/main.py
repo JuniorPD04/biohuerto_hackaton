@@ -16,6 +16,7 @@ from app.routers import (
     acceso,
     alertas,
     auth,
+    autoconsumos,
     biohuertos,
     campanias,
     catalogos,
@@ -27,10 +28,13 @@ from app.routers import (
     diagnostico,
     incidencias,
     monitoreo,
+    notifications,
     rag,
     recomendaciones,
     trazabilidad,
+    sync,
     users,
+    ventas,
 )
 from app.services.rag import ensure_ingested
 
@@ -66,11 +70,15 @@ app.include_router(diagnostico.router)
 app.include_router(rag.router)
 app.include_router(recomendaciones.router)
 app.include_router(cosechas.router)
+app.include_router(autoconsumos.router)
+app.include_router(ventas.router)
 app.include_router(dashboard.router)
 app.include_router(campanias.router)
 app.include_router(catalogos.router)
 app.include_router(acceso.router)
 app.include_router(entidades.router)
+app.include_router(sync.router)
+app.include_router(notifications.router)
 
 
 @app.on_event("startup")

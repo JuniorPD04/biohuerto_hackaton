@@ -9,7 +9,7 @@ Implementado hasta Fase 7:
 - Backend FastAPI + PostgreSQL 16.
 - Frontend React + Vite + Tailwind, mobile-first.
 - Docker Compose para DB, backend, frontend y backup.
-- Usuarios, RBAC, biohuertos, cultivos, monitoreo, incidencias, alertas, diagnostico, recomendaciones, mercado, trazabilidad, costeo, dashboard, PDF y offline basico.
+- Usuarios, RBAC, biohuertos, cultivos, monitoreo, incidencias, alertas, diagnostico, recomendaciones, mercado, trazabilidad, costeo, dashboard, PDF y PWA local-first con SQLite.
 - Tests backend de endpoints criticos.
 - Guia de defensa en `docs/DEFENSA.md`.
 
@@ -29,6 +29,12 @@ Arranca todo:
 
 ```powershell
 docker compose up --build
+```
+
+Produccion con HTTPS automatico (configura `APP_DOMAIN` y las claves VAPID):
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
 ```
 
 Abre:
@@ -100,7 +106,8 @@ docker compose exec db psql -U postgres -d biohuerto -c "select grantee, privile
 7. Mercado: cosechas publicadas.
 8. Trazabilidad: practicas sostenibles y costos.
 9. Reporte: descargar PDF.
-10. Offline: DevTools > Network > Offline, registrar monitoreo con incidencia, volver online y sincronizar.
+10. Instalar la PWA, pasar a modo offline, registrar trabajo de campo y volver online para sincronizar.
+11. Desde Conexion y dispositivo, activar notificaciones de forma voluntaria.
 
 ## Endpoints Clave
 
@@ -132,6 +139,11 @@ GET/POST /api/trazabilidad/costos
 GET      /api/dashboard/{biohuerto_id}
 GET      /api/reportes/{biohuerto_id}/pdf
 POST     /api/sync
+GET      /api/sync/bootstrap
+POST     /api/notifications/subscriptions
+GET/PUT  /api/notifications/preferences
+GET      /api/notifications/admin/recipients
+GET/POST /api/notifications/admin/campaigns
 ```
 
 ## Comandos API De Prueba
@@ -200,14 +212,17 @@ RAG_UPLOAD_MAX_MB=25
 La imagen es opcional. El PMV prioriza diagnostico guiado por formulario para mantener estabilidad.
 La pantalla `/rag` permite que un administrador suba PDFs; el backend los convierte a Markdown con Microsoft MarkItDown, genera embeddings y guarda los fragmentos en `rag_chunks` de pgvector.
 
-## Offline
+## PWA, SQLite y modo offline
 
-El modo offline cubre inicialmente monitoreo e incidencias:
+- SQLite WASM persiste en OPFS por usuario y se ejecuta en un Web Worker.
+- Biohuertos, cultivos, monitoreo, incidencias, cuidados, trazabilidad y cosechas aceptan cambios offline.
+- Los payloads locales se cifran con Web Crypto y las operaciones usan UUID idempotentes.
+- Al recuperar conexion, `/api/sync` envia la cola y descarga cambios incrementales.
+- Los conflictos conservan ambas versiones y se resuelven desde Conexion y dispositivo.
+- IA, RAG, PDF, mapas remotos y administracion requieren conexion.
+- El permiso de notificaciones nunca se solicita automaticamente.
+- El superadministrador dispone de `/notificaciones` para enviar campañas a una persona, una seleccion o todos los usuarios activos, con imagen opcional, historial y reutilizacion.
 
-- guarda registros en IndexedDB;
-- muestra badge de pendientes;
-- sincroniza con `/api/sync`;
-- usa UUID para evitar conflictos;
-- aplica politica `server-wins`.
-
-No implementa offline completo para no comprometer el flujo principal.
+Las migraciones PostgreSQL viven en `backend/db/migrations`; el bootstrap y seed estan en
+`backend/db/bootstrap`. Las migraciones SQLite que viajan con la PWA viven en
+`frontend/src/db/migrations`.

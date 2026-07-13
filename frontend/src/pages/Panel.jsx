@@ -167,8 +167,7 @@ export default function Panel() {
                     className="rounded-[14px] px-3 py-[14px] text-center"
                     style={{ background: p.bg, border: `1px solid ${p.dot}33` }}
                   >
-                    <div className="mb-2 inline-flex items-center gap-[6px] text-[12.5px] font-extrabold" style={{ color: p.fg }}>
-                      <span className="h-[7px] w-[7px] rounded-full" style={{ background: p.dot }} />
+                    <div className="mb-2 text-[12.5px] font-extrabold" style={{ color: p.fg }}>
                       {p.lab}
                     </div>
                     <div className="text-[34px] font-extrabold leading-none" style={{ color: p.fg }}>
@@ -523,18 +522,18 @@ function SemaforoAmbiental({ cultivos }) {
 function EcoCard({ icon, tint, titulo, valor, sub, positive }) {
   return (
     <Card pad="p-[22px]" className="flex h-full flex-col justify-center">
-      <div className="flex items-center gap-4">
+      <div className="flex items-start gap-4">
         <span className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-xl text-white" style={{ background: tintGradient(tint) }}>
           <Icon name={icon} size={22} />
         </span>
         <div className="min-w-0">
           <div className="text-sm font-bold text-muted-2">{titulo}</div>
           <div className="mt-[2px] text-2xl font-extrabold text-text">{valor}</div>
+          <div className="mt-2 flex items-center gap-[6px] text-[13px] font-bold" style={{ color: positive ? "#2f8a3e" : "var(--muted-2)" }}>
+            {positive && <Icon name="check" size={15} stroke={2.4} />}
+            {sub}
+          </div>
         </div>
-      </div>
-      <div className="mt-3 flex items-center gap-[6px] text-[13px] font-bold" style={{ color: positive ? "#2f8a3e" : "var(--muted-2)" }}>
-        {positive && <Icon name="check" size={15} stroke={2.4} />}
-        {sub}
       </div>
     </Card>
   );

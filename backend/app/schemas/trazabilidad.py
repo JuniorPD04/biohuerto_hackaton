@@ -84,3 +84,33 @@ class TrazabilidadResumen(BaseModel):
     total_costos: Decimal
     practicas_sostenibles: int
     cultivos: int
+
+
+class ProduccionHortalizaOut(BaseModel):
+    """Una fila por hortaliza (especie), consolidando área, insumos,
+    producción, autoconsumo, venta e inversión de todos sus cultivos."""
+
+    hortaliza: str
+    area_m2: Decimal
+    fecha_siembra: date | None = None
+    fecha_cosecha: date | None = None
+    compost_kg: Decimal
+    inversion_insumos: Decimal
+    produccion_total: Decimal
+    autoconsumo_total: Decimal
+    venta_cantidad: Decimal
+    venta_soles: Decimal
+    utilidad: Decimal
+
+
+class ProduccionZonaOut(BaseModel):
+    """Una fila por zona geográfica del productor (ej. "Zona P.J."), para
+    que la Coordinación Social compare producción entre zonas."""
+
+    zona: str
+    productores: int
+    area_m2: Decimal
+    produccion_total: Decimal
+    venta_soles: Decimal
+
+    model_config = ConfigDict(from_attributes=True)

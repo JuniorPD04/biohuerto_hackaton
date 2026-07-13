@@ -62,6 +62,7 @@ async def register(
     session: AsyncSession = Depends(get_session),
 ) -> AuthResponse:
     settings = get_settings()
+    public_role = "consumidor"
 
     existing = await session.execute(
         text("select id from usuarios where lower(email) = lower(:email) and deleted_at is null"),
@@ -91,7 +92,7 @@ async def register(
     )
 
     params = {
-        "rol": payload.rol,
+        "rol": public_role,
         "nombre": payload.nombre,
         "email": str(payload.email).lower(),
         "password_hash": hash_password(payload.password),
@@ -104,7 +105,7 @@ async def register(
     row = None
     for _ in range(5):
         try:
-            result = await session.execute(insert_sql, {**params, "codigo": _generate_codigo(payload.rol)})
+            result = await session.execute(insert_sql, {**params, "codigo": _generate_codigo(public_role)})
             row = result.mappings().one()
             await session.commit()
             break
@@ -115,7 +116,7 @@ async def register(
         raise HTTPException(status_code=500, detail="No se pudo generar un codigo de usuario unico")
 
     data = dict(row)
-    data["rol"] = payload.rol
+    data["rol"] = public_role
     return _auth_response(data, response)
 
 

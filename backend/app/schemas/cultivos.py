@@ -9,6 +9,11 @@ from app.schemas.common import clean_text
 EtapaCultivo = Literal["semillero", "crecimiento", "floracion", "fructificacion", "cosecha", "finalizado"]
 
 
+class CultivoCelda(BaseModel):
+    fila: int = Field(ge=1, le=30)
+    columna: int = Field(ge=1, le=30)
+
+
 class CultivoCreate(BaseModel):
     biohuerto_id: str
     especie_id: int
@@ -19,6 +24,9 @@ class CultivoCreate(BaseModel):
     cantidad: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
     unidad_id: int | None = None
     area_m2: Decimal | None = Field(default=None, gt=0, max_digits=10, decimal_places=2)
+    celda_fila: int | None = Field(default=None, ge=1, le=30)
+    celda_columna: int | None = Field(default=None, ge=1, le=30)
+    celdas: list[CultivoCelda] | None = None
     campania: str | None = Field(default=None, max_length=120)
     notas: str | None = Field(default=None, max_length=1000)
     imagen: str | None = None  # data URL (data:image/...;base64,...) opcional
@@ -32,6 +40,11 @@ class CultivoCreate(BaseModel):
     def validate_dates(self) -> "CultivoCreate":
         if self.fecha_estimada_cosecha and self.fecha_estimada_cosecha < self.fecha_siembra:
             raise ValueError("La fecha estimada de cosecha no puede ser anterior a la siembra.")
+        if self.celdas is None and self.celda_fila is not None and self.celda_columna is not None:
+            self.celdas = [CultivoCelda(fila=self.celda_fila, columna=self.celda_columna)]
+        if self.celdas and (self.celda_fila is None or self.celda_columna is None):
+            self.celda_fila = self.celdas[0].fila
+            self.celda_columna = self.celdas[0].columna
         return self
 
 
@@ -45,6 +58,9 @@ class CultivoUpdate(BaseModel):
     cantidad: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
     unidad_id: int | None = None
     area_m2: Decimal | None = Field(default=None, gt=0, max_digits=10, decimal_places=2)
+    celda_fila: int | None = Field(default=None, ge=1, le=30)
+    celda_columna: int | None = Field(default=None, ge=1, le=30)
+    celdas: list[CultivoCelda] | None = None
     campania: str | None = Field(default=None, max_length=120)
     notas: str | None = Field(default=None, max_length=1000)
     is_active: bool | None = None
@@ -55,6 +71,15 @@ class CultivoUpdate(BaseModel):
     def sanitize_text(cls, value: str | None) -> str | None:
         return clean_text(value)
 
+    @model_validator(mode="after")
+    def normalize_celdas(self) -> "CultivoUpdate":
+        if self.celdas is None and self.celda_fila is not None and self.celda_columna is not None:
+            self.celdas = [CultivoCelda(fila=self.celda_fila, columna=self.celda_columna)]
+        if self.celdas and (self.celda_fila is None or self.celda_columna is None):
+            self.celda_fila = self.celdas[0].fila
+            self.celda_columna = self.celdas[0].columna
+        return self
+
 
 class CultivoOut(BaseModel):
     id: str
@@ -64,6 +89,7 @@ class CultivoOut(BaseModel):
     especie: str
     especie_id: int | None = None
     variedad: str | None = None
+    etapa_id: int | None = None
     etapa: EtapaCultivo
     etapa_nombre: str | None = None
     fecha_siembra: date
@@ -72,6 +98,10 @@ class CultivoOut(BaseModel):
     unidad: str | None = None
     unidad_id: int | None = None
     area_m2: Decimal | None = None
+    celda_fila: int | None = None
+    celda_columna: int | None = None
+    celdas: list[CultivoCelda] = Field(default_factory=list)
+    campania_id: int | None = None
     campania: str | None = None
     notas: str | None = None
     is_active: bool = True

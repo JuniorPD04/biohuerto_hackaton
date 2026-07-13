@@ -15,11 +15,11 @@ import {
   Icon,
   IconBtn,
 } from "../components/ui/primitives.jsx";
-import { tintFor, fmtFecha, fmtMoneda, ESTADO_COSECHA } from "../lib/theme.js";
+import { tintFor, fmtFecha, fmtMoneda, localDateStr, ESTADO_COSECHA } from "../lib/theme.js";
 import { useToast } from "../components/ui/Toast.jsx";
 import { useConfirm, eliminarDialog, reactivarDialog } from "../components/ui/Confirm.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
-import { cosechasApi, cultivosApi, usuariosApi, catalogosApi } from "../lib/resources.js";
+import { autoconsumosApi, cosechasApi, cultivosApi, usuariosApi, catalogosApi } from "../lib/resources.js";
 
 const COSECHA_COLS = "2fr 1.4fr 1fr .9fr 1fr auto";
 const COSECHA_HEAD = ["Producto", "Productor", "Cosecha", "Precio", "Estado", "Acciones"];
@@ -68,6 +68,7 @@ function CosechasView() {
   const { rows, loading, refresh } = useCosechas(toast);
   const [formModal, setFormModal] = useState(null); // { mode, row }
   const [detalle, setDetalle] = useState(null); // cosecha a mostrar en detalle
+  const [autoconsumoModal, setAutoconsumoModal] = useState(null); // cosecha para registrar autoconsumo
   const [q, setQ] = useState("");
   const [precioF, setPrecioF] = useState("");
   const [view, setView] = useState(() => localStorage.getItem("bh-cosechaview") || "cards");
@@ -284,6 +285,7 @@ function CosechasView() {
                         {!pub && (
                           <IconBtn name="megaphone" title="Publicar" onClick={() => publicar(c)} />
                         )}
+                        <IconBtn name="seedling" title="Registrar autoconsumo" onClick={() => setAutoconsumoModal(c)} />
                         <IconBtn name="ban" title="Marcar agotado" onClick={() => marcarAgotado(c)} />
                       </>
                     )}
@@ -405,6 +407,16 @@ function CosechasView() {
                         Agotado
                       </Button>
                     )}
+                    {!down && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon="seedling"
+                        onClick={() => setAutoconsumoModal(c)}
+                      >
+                        Autoconsumo
+                      </Button>
+                    )}
                     <Button
                       variant="danger"
                       size="sm"
@@ -434,7 +446,98 @@ function CosechasView() {
       />
 
       <CosechaDetalleModal cosecha={detalle} onClose={() => setDetalle(null)} />
+
+      <AutoconsumoModal
+        cosecha={autoconsumoModal}
+        onClose={() => setAutoconsumoModal(null)}
+        onSaved={() => {
+          setAutoconsumoModal(null);
+          refresh();
+        }}
+        toast={toast}
+      />
     </div>
+  );
+}
+
+/* ============ Registrar autoconsumo (cantidad que el productor se queda) ============ */
+function AutoconsumoModal({ cosecha, onClose, onSaved, toast }) {
+  const [cantidad, setCantidad] = useState(1);
+  const [fecha, setFecha] = useState(localDateStr());
+  const [notas, setNotas] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (cosecha) {
+      setCantidad(1);
+      setFecha(localDateStr());
+      setNotas("");
+    }
+  }, [cosecha]);
+
+  if (!cosecha) return null;
+
+  const guardar = async () => {
+    setSaving(true);
+    try {
+      await autoconsumosApi.crear({
+        cosecha_id: cosecha.id,
+        cantidad: Number(cantidad) || 0,
+        fecha,
+        notas: notas.trim() || null,
+      });
+      toast("Autoconsumo registrado");
+      onSaved();
+    } catch (err) {
+      toast(err?.response?.data?.detail || "No se pudo registrar el autoconsumo", "danger");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={!!cosecha}
+      onClose={onClose}
+      title="Registrar autoconsumo"
+      subtitle={`${cosecha.nombre_producto} · Stock disponible: ${cosecha.cantidad} ${cosecha.unidad || ""}`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            icon="check"
+            onClick={guardar}
+            disabled={saving || Number(cantidad) <= 0 || Number(cantidad) > Number(cosecha.cantidad)}
+          >
+            {saving ? "Guardando…" : "Registrar"}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-[18px]">
+        <Field
+          label={`Cantidad (${cosecha.unidad || "und"})`}
+          hint="Lo que te quedas para consumo propio, no para vender."
+        >
+          <Input
+            type="number"
+            min="0.01"
+            max={cosecha.cantidad}
+            step="0.01"
+            value={cantidad}
+            onChange={(e) => setCantidad(e.target.value)}
+          />
+        </Field>
+        <Field label="Fecha">
+          <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+        </Field>
+        <Field label="Notas (opcional)">
+          <Input value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Ej: para la familia" />
+        </Field>
+      </div>
+    </Modal>
   );
 }
 

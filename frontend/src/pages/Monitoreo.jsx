@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   PageHeader,
   Card,
@@ -13,8 +14,9 @@ import {
 } from "../components/ui/primitives.jsx";
 import DataTable from "../components/ui/DataTable.jsx";
 import { fmtFecha } from "../lib/theme.js";
-import { monitoreoApi, biohuertosApi, cultivosApi } from "../lib/resources.js";
+import { monitoreoApi, biohuertosApi, cultivosApi, usuariosApi } from "../lib/resources.js";
 import { useToast } from "../components/ui/Toast.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 
 const asList = (data) => (Array.isArray(data) ? data : data?.items || []);
 
@@ -213,10 +215,15 @@ function Stat({ label, value }) {
 
 export default function Monitoreo() {
   const toast = useToast();
+  const { user } = useAuth();
+  const isAdmin = user?.rol === "admin";
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [biohuertos, setBiohuertos] = useState([]);
   const [biohuertoId, setBiohuertoId] = useState("");
+  const [productores, setProductores] = useState([]);
+  const [productorId, setProductorId] = useState(searchParams.get("productor") || "");
   const [modal, setModal] = useState(null);
 
   useEffect(() => {
@@ -229,10 +236,20 @@ export default function Monitoreo() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (!isAdmin) return;
+    usuariosApi
+      .list({ rol: "productor" })
+      .then((data) => setProductores(asList(data)))
+      .catch(() => setProductores([]));
+  }, [isAdmin]);
+
   const load = async () => {
     setLoading(true);
     try {
-      const params = biohuertoId ? { biohuerto_id: biohuertoId } : {};
+      const params = {};
+      if (biohuertoId) params.biohuerto_id = biohuertoId;
+      if (isAdmin && productorId) params.usuario_id = productorId;
       setRows(asList(await monitoreoApi.list(params)));
     } catch {
       toast("No se pudieron cargar los registros de monitoreo", "danger");
@@ -243,7 +260,14 @@ export default function Monitoreo() {
 
   useEffect(() => {
     load();
-  }, [biohuertoId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [biohuertoId, productorId]);
+
+  const cambiarProductor = (value) => {
+    setProductorId(value);
+    if (value) setSearchParams({ productor: value });
+    else setSearchParams({});
+  };
 
   const handleSave = async (body) => {
     try {
@@ -319,16 +343,30 @@ export default function Monitoreo() {
         className="mb-6"
         style={{ background: "var(--chip-2)", border: "1px solid var(--line)" }}
       >
-        <Field label="Biohuerto">
-          <Select value={biohuertoId} onChange={(e) => setBiohuertoId(e.target.value)}>
-            <option value="">Todos los biohuertos</option>
-            {biohuertos.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.nombre}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <div className={`grid grid-cols-1 gap-4 ${isAdmin ? "sm:grid-cols-2" : ""}`}>
+          <Field label="Biohuerto">
+            <Select value={biohuertoId} onChange={(e) => setBiohuertoId(e.target.value)}>
+              <option value="">Todos los biohuertos</option>
+              {biohuertos.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.nombre}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {isAdmin && (
+            <Field label="Productor">
+              <Select value={productorId} onChange={(e) => cambiarProductor(e.target.value)}>
+                <option value="">Todos los productores</option>
+                {productores.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nombre}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+        </div>
       </Card>
 
       <DataTable

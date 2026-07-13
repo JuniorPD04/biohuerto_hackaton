@@ -1,23 +1,30 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import AppShell from "./components/layout/AppShell.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
-import Login from "./pages/Login.jsx";
-import Panel from "./pages/Panel.jsx";
-import Usuarios from "./pages/Usuarios.jsx";
-import Biohuertos from "./pages/Biohuertos.jsx";
-import Cultivos from "./pages/Cultivos.jsx";
-import CultivoWorkspace from "./pages/CultivoWorkspace.jsx";
-import Fitosanitario from "./pages/Fitosanitario.jsx";
-import Alertas from "./pages/Alertas.jsx";
-import Ofertas from "./pages/Ofertas.jsx";
-import Rag from "./pages/Rag.jsx";
-import Campanias from "./pages/Campanias.jsx";
-import Incidencias from "./pages/Incidencias.jsx";
-import Monitoreo from "./pages/Monitoreo.jsx";
-import Cuidados from "./pages/Cuidados.jsx";
-import Trazabilidad from "./pages/Trazabilidad.jsx";
-import RolesAccesos from "./pages/RolesAccesos.jsx";
-import Entidades from "./pages/Entidades.jsx";
+
+const Login = lazy(() => import("./pages/Login.jsx"));
+const Panel = lazy(() => import("./pages/Panel.jsx"));
+const Usuarios = lazy(() => import("./pages/Usuarios.jsx"));
+const Biohuertos = lazy(() => import("./pages/Biohuertos.jsx"));
+const Cultivos = lazy(() => import("./pages/Cultivos.jsx"));
+const CultivoWorkspace = lazy(() => import("./pages/CultivoWorkspace.jsx"));
+const Fitosanitario = lazy(() => import("./pages/Fitosanitario.jsx"));
+const Alertas = lazy(() => import("./pages/Alertas.jsx"));
+const Ofertas = lazy(() => import("./pages/Ofertas.jsx"));
+const Rag = lazy(() => import("./pages/Rag.jsx"));
+const Campanias = lazy(() => import("./pages/Campanias.jsx"));
+const Incidencias = lazy(() => import("./pages/Incidencias.jsx"));
+const Monitoreo = lazy(() => import("./pages/Monitoreo.jsx"));
+const Cuidados = lazy(() => import("./pages/Cuidados.jsx"));
+const Trazabilidad = lazy(() => import("./pages/Trazabilidad.jsx"));
+const RolesAccesos = lazy(() => import("./pages/RolesAccesos.jsx"));
+const Entidades = lazy(() => import("./pages/Entidades.jsx"));
+const Mercado = lazy(() => import("./pages/Mercado.jsx"));
+const Ventas = lazy(() => import("./pages/Ventas.jsx"));
+const NotificacionesAdmin = lazy(() => import("./pages/NotificacionesAdmin.jsx"));
+const Proyecto = lazy(() => import("./pages/Proyecto.jsx"));
+const TiendaPublica = lazy(() => import("./pages/TiendaPublica.jsx"));
 
 function BootScreen() {
   return (
@@ -37,15 +44,26 @@ function Protected({ children }) {
 }
 
 function GuestOnly({ children }) {
-  const { booting, isAuthenticated } = useAuth();
+  const { booting, isAuthenticated, user } = useAuth();
   if (booting) return <BootScreen />;
-  return isAuthenticated ? <Navigate to="/panel" replace /> : children;
+  return isAuthenticated ? <Navigate to={defaultPath(user)} replace /> : children;
+}
+
+function AdminOnly({ children }) {
+  const { user } = useAuth();
+  return user?.rol === "admin" ? children : <Navigate to={defaultPath(user)} replace />;
+}
+
+function defaultPath(user) {
+  return user?.rol === "consumidor" ? "/mercado" : "/panel";
 }
 
 export default function App() {
   return (
-    <Routes>
+    <Suspense fallback={<BootScreen />}><Routes>
       <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
+      <Route path="/proyecto" element={<Proyecto />} />
+      <Route path="/tienda" element={<TiendaPublica />} />
       <Route
         path="/"
         element={
@@ -54,8 +72,9 @@ export default function App() {
           </Protected>
         }
       >
-        <Route index element={<Navigate to="/panel" replace />} />
+        <Route index element={<RoleHome />} />
         <Route path="panel" element={<Panel />} />
+        <Route path="mercado" element={<Mercado />} />
         <Route path="usuarios" element={<Navigate to="/usuarios/productores" replace />} />
         <Route path="usuarios/:tab" element={<Usuarios />} />
         <Route path="biohuertos" element={<Biohuertos />} />
@@ -71,10 +90,23 @@ export default function App() {
         <Route path="alertas" element={<Alertas />} />
         <Route path="ofertas" element={<Navigate to="/ofertas/cosechas" replace />} />
         <Route path="ofertas/:tab" element={<Ofertas />} />
+        <Route path="ventas" element={<Navigate to="/ventas/nueva" replace />} />
+        <Route path="ventas/:tab" element={<Ventas />} />
         <Route path="roles" element={<RolesAccesos />} />
         <Route path="entidades" element={<Entidades />} />
+        <Route path="notificaciones" element={<AdminOnly><NotificacionesAdmin /></AdminOnly>} />
       </Route>
-      <Route path="*" element={<Navigate to="/panel" replace />} />
-    </Routes>
+      <Route path="*" element={<FallbackHome />} />
+    </Routes></Suspense>
   );
+}
+
+function RoleHome() {
+  const { user } = useAuth();
+  return <Navigate to={defaultPath(user)} replace />;
+}
+
+function FallbackHome() {
+  const { user, isAuthenticated } = useAuth();
+  return <Navigate to={isAuthenticated ? defaultPath(user) : "/login"} replace />;
 }

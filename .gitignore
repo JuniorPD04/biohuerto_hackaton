@@ -11,6 +11,9 @@ htmlcov/
 node_modules/
 dist/
 build/
+test-results/
+playwright-report/
+coverage/
 backups/
 *.log
 *.bak

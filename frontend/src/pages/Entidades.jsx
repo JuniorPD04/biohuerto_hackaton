@@ -305,8 +305,13 @@ export default function Entidades() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(null);
+  const [page, setPage] = useState(0);
+  const [rowPage, setRowPage] = useState(0);
 
   const cfg = sel ? ENTIDADES[sel.key] : null;
+  const PAGE_SIZE = 8;
+  const pageCount = Math.ceil(meta.length / PAGE_SIZE) || 1;
+  const pageItems = meta.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   const loadMeta = async () => {
     try {
@@ -394,6 +399,16 @@ export default function Entidades() {
     );
   }, [rows, search]);
 
+  // Paginación de registros: 6 por página.
+  const ROW_PAGE_SIZE = 6;
+  const rowPageCount = Math.ceil(filtered.length / ROW_PAGE_SIZE) || 1;
+  const safeRowPage = Math.min(rowPage, rowPageCount - 1);
+  const pagedRows = filtered.slice(safeRowPage * ROW_PAGE_SIZE, safeRowPage * ROW_PAGE_SIZE + ROW_PAGE_SIZE);
+
+  useEffect(() => {
+    setRowPage(0);
+  }, [sel?.key, search]);
+
   const columns = (cfg?.columns || []).map((c) => ({
     key: c.key,
     label: c.label,
@@ -410,12 +425,12 @@ export default function Entidades() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[300px_1fr]">
         {/* Rail de entidades */}
-        <div>
+        <div className="flex flex-col">
           <div className="mb-3 px-1 text-[11.5px] font-extrabold uppercase tracking-[.08em] text-muted-3">
             Entidades fuente
           </div>
           <div className="grid gap-[10px]">
-            {meta.map((e) => {
+            {pageItems.map((e) => {
               const active = sel?.key === e.key;
               return (
                 <button
@@ -441,10 +456,42 @@ export default function Entidades() {
               );
             })}
           </div>
+
+          {pageCount > 1 && (
+            <div className="mt-auto flex items-center justify-between px-1 pt-4">
+              <button
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0}
+                title="Anteriores"
+                className="grid h-9 w-9 place-items-center rounded-[10px] border border-line bg-surface text-muted-2 transition-colors hover:border-line-2 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Icon name="chevLeft" size={18} />
+              </button>
+              <span className="text-[12.5px] font-bold text-muted-2">
+                {page + 1} / {pageCount}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                disabled={page >= pageCount - 1}
+                title="Siguientes"
+                className="grid h-9 w-9 place-items-center rounded-[10px] border border-line bg-surface text-muted-2 transition-colors hover:border-line-2 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Icon name="chevRight" size={18} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Panel del catálogo seleccionado */}
-        <div>
+        <div className="flex flex-col">
+          {/* Espaciador invisible: reserva la altura del rótulo "ENTIDADES FUENTE"
+              para que la cabecera quede a la misma altura que la primera tarjeta del rail. */}
+          <div
+            aria-hidden
+            className="mb-3 hidden select-none px-1 text-[11.5px] font-extrabold uppercase tracking-[.08em] text-transparent lg:block"
+          >
+            ·
+          </div>
           {sel && (
             <>
               <Card pad="p-5" className="mb-5">
@@ -473,7 +520,7 @@ export default function Entidades() {
 
               <DataTable
                 columns={columns}
-                rows={filtered}
+                rows={pagedRows}
                 loading={loading}
                 empty={{
                   icon: sel.icon,
@@ -502,8 +549,35 @@ export default function Entidades() {
               />
 
               {!loading && filtered.length > 0 && (
-                <div className="mt-6 border-t border-line pt-4 text-sm text-muted-2">
-                  Mostrando {filtered.length} de {rows.length} registro{rows.length === 1 ? "" : "s"}
+                <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm text-muted-2">
+                  <span>
+                    Mostrando {safeRowPage * ROW_PAGE_SIZE + 1}–
+                    {Math.min((safeRowPage + 1) * ROW_PAGE_SIZE, filtered.length)} de {filtered.length} registro
+                    {filtered.length === 1 ? "" : "s"}
+                  </span>
+                  {rowPageCount > 1 && (
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setRowPage((p) => Math.max(0, p - 1))}
+                        disabled={safeRowPage === 0}
+                        title="Anteriores"
+                        className="grid h-9 w-9 place-items-center rounded-[10px] border border-line bg-surface text-muted-2 transition-colors hover:border-line-2 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Icon name="chevLeft" size={18} />
+                      </button>
+                      <span className="text-[12.5px] font-bold text-muted-2">
+                        {safeRowPage + 1} / {rowPageCount}
+                      </span>
+                      <button
+                        onClick={() => setRowPage((p) => Math.min(rowPageCount - 1, p + 1))}
+                        disabled={safeRowPage >= rowPageCount - 1}
+                        title="Siguientes"
+                        className="grid h-9 w-9 place-items-center rounded-[10px] border border-line bg-surface text-muted-2 transition-colors hover:border-line-2 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Icon name="chevRight" size={18} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </>

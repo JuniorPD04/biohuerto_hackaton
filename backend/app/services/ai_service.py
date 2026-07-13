@@ -12,8 +12,15 @@ en un tono claro y accesible para pequenos productores comunitarios sin formacio
 Devuelve solo JSON valido con problema, nivel_riesgo, recomendacion, acciones y confianza."""
 
 
-def _fallback_result(especie: str, sintomas: list[str], zona_afectada: str | None, tiempo_dias: int | None) -> DiagnosticoResult:
-    joined = " ".join(sintomas).lower()
+def _fallback_result(
+    especie: str,
+    sintomas: list[str],
+    zona_afectada: str | None,
+    tiempo_dias: int | None,
+    parte_planta: str | None = None,
+    observaciones: str | None = None,
+) -> DiagnosticoResult:
+    joined = " ".join([*sintomas, observaciones or ""]).lower()
     riesgo = "medio"
     problema = "Estres del cultivo por condiciones de manejo"
     acciones = [
@@ -46,8 +53,9 @@ def _fallback_result(especie: str, sintomas: list[str], zona_afectada: str | Non
         ]
 
     zona = f" en {zona_afectada}" if zona_afectada else ""
+    parte = f" ({parte_planta.lower()})" if parte_planta else ""
     return DiagnosticoResult(
-        problema=f"{problema}{zona}",
+        problema=f"{problema}{zona}{parte}",
         nivel_riesgo=riesgo,
         recomendacion=f"Para {especie}, prioriza manejo organico preventivo: {acciones[0]} {acciones[1]}",
         acciones=acciones,
@@ -61,17 +69,24 @@ async def diagnostico_guiado(
     sintomas: list[str],
     zona_afectada: str | None,
     tiempo_dias: int | None,
+    parte_planta: str | None = None,
+    observaciones: str | None = None,
 ) -> tuple[DiagnosticoResult, str | None]:
     settings = get_settings()
     if not settings.openrouter_api_key:
-        return _fallback_result(especie, sintomas, zona_afectada, tiempo_dias), None
+        return (
+            _fallback_result(especie, sintomas, zona_afectada, tiempo_dias, parte_planta, observaciones),
+            None,
+        )
 
     user_prompt = {
         "modalidad": "diagnostico_guiado",
         "especie": especie,
+        "parte_planta_afectada": parte_planta,
         "sintomas": sintomas,
         "zona_afectada": zona_afectada,
         "tiempo_dias": tiempo_dias,
+        "observaciones_del_productor": observaciones,
         "formato_salida": {
             "problema": "nombre breve del problema probable",
             "nivel_riesgo": "bajo|medio|alto",

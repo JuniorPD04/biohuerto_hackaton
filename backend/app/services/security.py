@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
+import bcrypt
 import jwt
 from fastapi import Response
 from passlib.context import CryptContext
@@ -10,6 +11,15 @@ from app.config import get_settings
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
 REFRESH_COOKIE_NAME = "biohuerto_refresh_token"
+
+# passlib 1.7.x intenta leer bcrypt.__about__.__version__, atributo que
+# bcrypt 4.1+ ya no expone. El backend funciona igual, pero sin esto muestra
+# "(trapped) error reading bcrypt version" en cada verificacion de password.
+if not hasattr(bcrypt, "__about__"):
+    class _BcryptAbout:
+        __version__ = getattr(bcrypt, "__version__", "4")
+
+    bcrypt.__about__ = _BcryptAbout()
 
 pwd_context = CryptContext(
     schemes=["bcrypt"],
@@ -95,4 +105,3 @@ def clear_refresh_cookie(response: Response) -> None:
         samesite="lax",
         path="/auth",
     )
-

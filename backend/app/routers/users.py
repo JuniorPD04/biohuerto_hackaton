@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 # devuelven texto plano en las columnas `telefono` y `direccion`.
 _USER_SELECT = """
     select u.id, u.email, u.nombre, r.codigo as rol, u.is_active,
-           u.created_at, u.updated_at,
+           u.created_at, u.updated_at, u.latitud, u.longitud, u.zona,
            pgp_sym_decrypt(u.telefono_encrypted,  cast(:enc_key as text)) as telefono,
            pgp_sym_decrypt(u.direccion_encrypted, cast(:enc_key as text)) as direccion
     from usuarios u
@@ -75,6 +75,13 @@ async def update_me(
             "direccion_encrypted = case when cast(:direccion as text) is null then null "
             "else pgp_sym_encrypt(cast(:direccion as text), cast(:enc_key as text)) end"
         )
+    for _geo in ("latitud", "longitud"):
+        if _geo in values:
+            params[_geo] = values[_geo]
+            clauses.append(f"{_geo} = :{_geo}")
+    if "zona" in values:
+        params["zona"] = values["zona"]
+        clauses.append("zona = :zona")
 
     await session.execute(
         text(
@@ -137,14 +144,16 @@ async def admin_create_user(
     insert_sql = text(
         """
         insert into usuarios
-            (rol_id, codigo, nombre, email, password_hash, telefono_encrypted, direccion_encrypted)
+            (rol_id, codigo, nombre, email, password_hash, telefono_encrypted, direccion_encrypted,
+             latitud, longitud)
         values (
             (select id from roles where codigo = :rol),
             :codigo, :nombre, :email, :password_hash,
             case when cast(:telefono as text)  is null then null
                  else pgp_sym_encrypt(cast(:telefono as text),  cast(:enc_key as text)) end,
             case when cast(:direccion as text) is null then null
-                 else pgp_sym_encrypt(cast(:direccion as text), cast(:enc_key as text)) end
+                 else pgp_sym_encrypt(cast(:direccion as text), cast(:enc_key as text)) end,
+            :latitud, :longitud
         )
         returning id
         """
@@ -156,6 +165,8 @@ async def admin_create_user(
         "password_hash": hash_password(payload.password),
         "telefono": payload.telefono,
         "direccion": payload.direccion,
+        "latitud": payload.latitud,
+        "longitud": payload.longitud,
         "enc_key": enc_key,
     }
     new_id = None
@@ -192,6 +203,27 @@ async def admin_update_user(
             status_code=status.HTTP_409_CONFLICT,
             detail="No se puede editar un usuario dado de baja. Reactívalo primero.",
         )
+    if values.get("rol") and values["rol"] != current.rol:
+        if current.rol == "admin" and values["rol"] != "admin":
+            admin_count = (
+                await session.execute(
+                    text(
+                        """
+                        select count(*)
+                        from usuarios u
+                        join roles r on r.id = u.rol_id
+                        where r.codigo = 'admin'
+                          and u.is_active = true
+                          and u.deleted_at is null
+                        """
+                    )
+                )
+            ).scalar_one()
+            if admin_count <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="No se puede cambiar el rol del ultimo administrador activo.",
+                )
 
     enc_key = get_settings().pgcrypto_key
     params: dict = {"user_id": user_id, "enc_key": enc_key}
@@ -199,6 +231,9 @@ async def admin_update_user(
     if "is_active" in values:
         params["is_active"] = values["is_active"]
         clauses.append("is_active = :is_active")
+    if "rol" in values:
+        params["rol"] = values["rol"]
+        clauses.append("rol_id = (select id from roles where codigo = :rol)")
     if "nombre" in values:
         params["nombre"] = values["nombre"]
         clauses.append("nombre = :nombre")
@@ -214,6 +249,13 @@ async def admin_update_user(
             "direccion_encrypted = case when cast(:direccion as text) is null then null "
             "else pgp_sym_encrypt(cast(:direccion as text), cast(:enc_key as text)) end"
         )
+    for _geo in ("latitud", "longitud"):
+        if _geo in values:
+            params[_geo] = values[_geo]
+            clauses.append(f"{_geo} = :{_geo}")
+    if "zona" in values:
+        params["zona"] = values["zona"]
+        clauses.append("zona = :zona")
 
     result = await session.execute(
         text(f"update usuarios set {', '.join(clauses)} where id = :user_id and deleted_at is null"),

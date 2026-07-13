@@ -53,8 +53,8 @@ export default function DataTable({
   return (
     <Card pad="" className="overflow-hidden">
       <div
-        className="grid items-center gap-3 border-b border-line bg-chip-2 px-[22px] py-[14px] text-[12.5px] font-extrabold uppercase tracking-[.05em] text-muted-2"
-        style={{ gridTemplateColumns: template }}
+        className="hidden items-center gap-3 border-b border-line bg-chip-2 px-[22px] py-[14px] text-[12.5px] font-extrabold uppercase tracking-[.05em] text-muted-2 md:grid md:[grid-template-columns:var(--table-cols)]"
+        style={{ "--table-cols": template }}
       >
         {columns.map((c) => (
           <div key={c.key} className={c.align === "right" ? "text-right" : ""}>
@@ -67,27 +67,28 @@ export default function DataTable({
       {rows.map((row, i) => (
         <div
           key={keyFor(row, i)}
-          className="grid items-center gap-3 border-b border-line px-[22px] py-[15px] last:border-b-0"
-          style={{ gridTemplateColumns: template }}
+          className="grid grid-cols-1 gap-3 border-b border-line px-4 py-4 last:border-b-0 md:items-center md:px-[22px] md:py-[15px] md:[grid-template-columns:var(--table-cols)]"
+          style={{ "--table-cols": template }}
         >
           {columns.map((c) => (
             <div
               key={c.key}
-              className={`min-w-0 text-[14.5px] text-text ${
+              className={`grid min-w-0 grid-cols-[minmax(92px,.8fr)_1.4fr] items-start gap-3 text-[14.5px] text-text md:block ${
                 c.align === "right" ? "text-right" : ""
               }`}
             >
+              <span className="text-left text-xs font-extrabold uppercase tracking-[.04em] text-muted-2 md:hidden">{c.label}</span>
               {c.render ? (
-                c.render(row)
+                <span className="min-w-0 text-left md:contents">{c.render(row)}</span>
               ) : (
-                <span className="block overflow-hidden text-ellipsis whitespace-nowrap">
+                <span className="block overflow-hidden text-ellipsis text-left md:whitespace-nowrap">
                   {row[c.key] ?? "—"}
                 </span>
               )}
             </div>
           ))}
           {rowActions && (
-            <div className="flex items-center justify-end gap-[6px]">
+            <div className="flex items-center justify-end gap-[6px] border-t border-line pt-3 md:border-0 md:pt-0">
               {rowActions(row)}
             </div>
           )}

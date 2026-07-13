@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { jsPDF } from "jspdf";
+import * as XLSX from "xlsx";
 import {
   PageHeader,
   Card,
@@ -12,14 +14,17 @@ import {
   Tabs,
 } from "../components/ui/primitives.jsx";
 import DataTable from "../components/ui/DataTable.jsx";
-import { fmtFecha, fmtMoneda } from "../lib/theme.js";
+import { fmtFecha, fmtMoneda, localDateStr } from "../lib/theme.js";
 import {
   trazabilidadApi,
   biohuertosApi,
   cultivosApi,
   catalogosApi,
+  produccionApi,
+  usuariosApi,
 } from "../lib/resources.js";
 import { useToast } from "../components/ui/Toast.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 
 const asList = (data) => (Array.isArray(data) ? data : data?.items || []);
 
@@ -572,11 +577,284 @@ function CostosTab({ biohuertoId }) {
   );
 }
 
+/* ============================ PRODUCCIÓN POR HORTALIZA ============================ */
+
+function ProduccionTab() {
+  const toast = useToast();
+  const { user } = useAuth();
+  const isAdmin = user?.rol === "admin";
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [productores, setProductores] = useState([]);
+  const [productorId, setProductorId] = useState("");
+  const [zonaRows, setZonaRows] = useState([]);
+  const [loadingZona, setLoadingZona] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    usuariosApi
+      .list({ rol: "productor" })
+      .then((data) => setProductores(asList(data)))
+      .catch(() => setProductores([]));
+
+    setLoadingZona(true);
+    produccionApi
+      .porZona()
+      .then((data) => setZonaRows(asList(data)))
+      .catch(() => toast("No se pudo cargar el reporte por zona", "danger"))
+      .finally(() => setLoadingZona(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const params = isAdmin && productorId ? { usuario_id: productorId } : {};
+      setRows(asList(await produccionApi.porHortaliza(params)));
+    } catch {
+      toast("No se pudo cargar el registro de producción", "danger");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productorId]);
+
+  const columns = [
+    {
+      key: "hortaliza",
+      label: "Hortaliza",
+      width: "1.2fr",
+      render: (r) => <span className="font-extrabold text-text">{r.hortaliza}</span>,
+    },
+    { key: "area_m2", label: "Área (m²)", width: ".8fr", render: (r) => Number(r.area_m2).toLocaleString("es-PE") },
+    { key: "fecha_siembra", label: "Siembra", width: ".9fr", render: (r) => fmtFecha(r.fecha_siembra) },
+    { key: "fecha_cosecha", label: "Cosecha", width: ".9fr", render: (r) => fmtFecha(r.fecha_cosecha) },
+    {
+      key: "produccion_total",
+      label: "Producción total",
+      width: "1fr",
+      render: (r) => Number(r.produccion_total).toLocaleString("es-PE"),
+    },
+    {
+      key: "autoconsumo_total",
+      label: "Autoconsumo",
+      width: ".9fr",
+      render: (r) => Number(r.autoconsumo_total).toLocaleString("es-PE"),
+    },
+    { key: "venta_soles", label: "Venta (S/.)", width: ".9fr", render: (r) => fmtMoneda(r.venta_soles) },
+    {
+      key: "utilidad",
+      label: "Utilidad",
+      width: ".9fr",
+      render: (r) => (
+        <span className={Number(r.utilidad) < 0 ? "font-extrabold text-[#b23a2e]" : "font-extrabold text-primary"}>
+          {fmtMoneda(r.utilidad)}
+        </span>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        {isAdmin ? (
+          <Field label="Productor" className="min-w-[220px]">
+            <Select value={productorId} onChange={(e) => setProductorId(e.target.value)}>
+              <option value="">Todos los productores</option>
+              {productores.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nombre}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : (
+          <div />
+        )}
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="download"
+            disabled={rows.length === 0}
+            onClick={() => exportarProduccionPDF(rows)}
+          >
+            Exportar PDF
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon="download"
+            disabled={rows.length === 0}
+            onClick={() => exportarProduccionExcel(rows)}
+          >
+            Exportar Excel
+          </Button>
+        </div>
+      </div>
+      <DataTable
+        columns={columns}
+        rows={rows}
+        loading={loading}
+        empty={{
+          icon: "leaf",
+          title: "Sin datos de producción",
+          desc: "Registra cultivos, cosechas y ventas para ver el resumen por hortaliza.",
+        }}
+      />
+      <p className="mt-4 text-xs text-muted-2">
+        Utilidad = venta (S/.) − inversión en insumos. Autoconsumo es la cantidad que te quedaste para consumo propio, registrada desde Ofertas → Gestión de Cosechas.
+      </p>
+
+      {isAdmin && (
+        <div className="mt-10">
+          <h3 className="m-0 mb-4 text-[18px] font-extrabold text-text">Producción por zona</h3>
+          <DataTable
+            columns={[
+              { key: "zona", label: "Zona", width: "1.3fr", render: (r) => <span className="font-extrabold text-text">{r.zona}</span> },
+              { key: "productores", label: "Productores", width: ".8fr" },
+              { key: "area_m2", label: "Área (m²)", width: ".9fr", render: (r) => Number(r.area_m2).toLocaleString("es-PE") },
+              {
+                key: "produccion_total",
+                label: "Producción total",
+                width: "1fr",
+                render: (r) => Number(r.produccion_total).toLocaleString("es-PE"),
+              },
+              { key: "venta_soles", label: "Venta (S/.)", width: ".9fr", render: (r) => fmtMoneda(r.venta_soles) },
+            ]}
+            rows={zonaRows}
+            loading={loadingZona}
+            empty={{
+              icon: "globe",
+              title: "Sin zonas asignadas",
+              desc: "Asigna una zona a cada productor desde Usuarios → Productores para ver este reporte.",
+            }}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+function exportarProduccionPDF(rows) {
+  const GREEN = [47, 122, 58];
+  const GRAY = [107, 117, 108];
+  const LINE = [230, 235, 229];
+  const TEXT = [28, 42, 32];
+
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const M = 40;
+  let y = M;
+  const ensure = (h) => {
+    if (y + h > pageH - M) {
+      doc.addPage();
+      y = M;
+    }
+  };
+
+  doc.setFillColor(...GREEN);
+  doc.roundedRect(M, y, 34, 34, 8, 8, "F");
+  doc.setTextColor(...GREEN);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text("Registro de producción por hortaliza", M + 46, y + 15);
+  doc.setTextColor(...GRAY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text("Biohuerto · Área, insumos, producción, autoconsumo y venta", M + 46, y + 30);
+  y += 48;
+  doc.setDrawColor(...GREEN);
+  doc.setLineWidth(2);
+  doc.line(M, y, pageW - M, y);
+  y += 20;
+
+  const cols = [
+    ["Hortaliza", 150],
+    ["Área m²", 55],
+    ["Compost kg", 60],
+    ["Inv. insumos", 65],
+    ["Producción", 65],
+    ["Autoconsumo", 65],
+    ["Venta S/.", 60],
+    ["Utilidad", 60],
+  ];
+  const rowToCells = (r) => [
+    r.hortaliza,
+    Number(r.area_m2).toFixed(1),
+    Number(r.compost_kg).toFixed(1),
+    fmtMoneda(r.inversion_insumos),
+    Number(r.produccion_total).toFixed(1),
+    Number(r.autoconsumo_total).toFixed(1),
+    fmtMoneda(r.venta_soles),
+    fmtMoneda(r.utilidad),
+  ];
+
+  ensure(24);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(...GREEN);
+  let x = M;
+  cols.forEach(([label, w]) => {
+    doc.text(label, x, y);
+    x += w;
+  });
+  y += 8;
+  doc.setDrawColor(...GREEN);
+  doc.setLineWidth(1);
+  doc.line(M, y, pageW - M, y);
+  y += 14;
+
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...TEXT);
+  rows.forEach((r) => {
+    ensure(20);
+    x = M;
+    rowToCells(r).forEach((cell, i) => {
+      doc.text(String(cell), x, y);
+      x += cols[i][1];
+    });
+    y += 8;
+    doc.setDrawColor(...LINE);
+    doc.setLineWidth(0.5);
+    doc.line(M, y, pageW - M, y);
+    y += 12;
+  });
+
+  doc.save(`registro-produccion-${localDateStr()}.pdf`);
+}
+
+function exportarProduccionExcel(rows) {
+  const filas = rows.map((r) => ({
+    Hortaliza: r.hortaliza,
+    "Área (m²)": Number(r.area_m2),
+    Siembra: r.fecha_siembra || "",
+    Cosecha: r.fecha_cosecha || "",
+    "Compost (kg)": Number(r.compost_kg),
+    "Inversión insumos (S/.)": Number(r.inversion_insumos),
+    "Producción total": Number(r.produccion_total),
+    Autoconsumo: Number(r.autoconsumo_total),
+    "Venta (cant.)": Number(r.venta_cantidad),
+    "Venta (S/.)": Number(r.venta_soles),
+    "Utilidad monetaria": Number(r.utilidad),
+  }));
+  const ws = XLSX.utils.json_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Producción");
+  XLSX.writeFile(wb, `registro-produccion-${localDateStr()}.xlsx`);
+}
+
 /* ============================ PÁGINA ============================ */
 
 const TABS = [
   { id: "practicas", label: "Prácticas", icon: "recycle" },
   { id: "costos", label: "Costos", icon: "coins" },
+  { id: "produccion", label: "Producción", icon: "leaf" },
 ];
 
 export default function Trazabilidad() {
@@ -604,27 +882,31 @@ export default function Trazabilidad() {
 
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
-      <Card
-        pad="p-5"
-        className="mb-6"
-        style={{ background: "var(--chip-2)", border: "1px solid var(--line)" }}
-      >
-        <Field label="Biohuerto">
-          <Select value={biohuertoId} onChange={(e) => setBiohuertoId(e.target.value)}>
-            <option value="">Todos los biohuertos</option>
-            {biohuertos.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.nombre}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      </Card>
+      {tab !== "produccion" && (
+        <Card
+          pad="p-5"
+          className="mb-6"
+          style={{ background: "var(--chip-2)", border: "1px solid var(--line)" }}
+        >
+          <Field label="Biohuerto">
+            <Select value={biohuertoId} onChange={(e) => setBiohuertoId(e.target.value)}>
+              <option value="">Todos los biohuertos</option>
+              {biohuertos.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.nombre}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </Card>
+      )}
 
       {tab === "practicas" ? (
         <PracticasTab biohuertoId={biohuertoId} />
-      ) : (
+      ) : tab === "costos" ? (
         <CostosTab biohuertoId={biohuertoId} />
+      ) : (
+        <ProduccionTab />
       )}
     </div>
   );
